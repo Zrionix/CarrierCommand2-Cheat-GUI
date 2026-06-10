@@ -1,0 +1,56 @@
+name: Release
+
+# Produces the downloadable Windows .exe.
+#
+#   * Push a version tag (e.g. `git tag v1.0.0 && git push origin v1.0.0`)
+#     -> builds the exe and publishes a GitHub Release with it attached.
+#   * Run manually from the Actions tab ("Run workflow")
+#     -> builds the exe and uploads it as a downloadable build artifact
+#        (no Release is created).
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # required to create a Release
+
+jobs:
+  build-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Publish self-contained single-file exe
+        shell: pwsh
+        run: |
+          dotnet publish src/CC2CheatGUI -c Release -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:EnableCompressionInSingleFile=true `
+            -o publish
+          Get-ChildItem publish
+
+      - name: Upload build artifact (manual runs)
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: CC2CheatGUI-windows-x64
+          path: publish/CC2CheatGUI.exe
+          if-no-files-found: error
+
+      - name: Publish GitHub Release (tag pushes)
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: publish/CC2CheatGUI.exe
+          generate_release_notes: true
+          fail_on_unmatched_files: true
