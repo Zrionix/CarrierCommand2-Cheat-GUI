@@ -310,9 +310,21 @@ public sealed partial class MainForm
         if (_targetCombo.Items.Count > 0) _targetCombo.SelectedIndex = idx;
     }
 
+    /// <summary>Re-read the loaded save from disk so live locates match the game's current state,
+    /// unless there are unsaved tool edits (which we must not discard).</summary>
+    private void RefreshSaveFromDisk()
+    {
+        if (!_dirty && _save != null && System.IO.File.Exists(_save.Path))
+        {
+            try { _save = SaveFile.Load(_save.Path); RebuildLiveTargets(); _targetsSave = _save; }
+            catch { /* keep the existing in-memory save */ }
+        }
+    }
+
     private void TrainerLocateHold()
     {
         if (!_trainer.Attached || _holdLocating) return;
+        RefreshSaveFromDisk();
         if (_targetCombo.SelectedItem is not LiveTarget target)
         {
             _holdStatus.ForeColor = Cc2Theme.Red;
@@ -349,7 +361,7 @@ public sealed partial class MainForm
                 {
                     _holdApplyBtn.Enabled = _holdFillBtn.Enabled = false;
                     _holdStatus.ForeColor = Cc2Theme.Red;
-                    _holdStatus.Text = $"Couldn't find {what}. Make sure the SAME save is loaded in-game, then LOCATE again.";
+                    _holdStatus.Text = $"Couldn't find {what}. Save your game in-game (F5), then click LOCATE again — I read your latest save automatically.";
                     return;
                 }
                 PopulateHoldGrid(live);
@@ -408,7 +420,12 @@ public sealed partial class MainForm
 
     private void RefreshTrainer()
     {
-        if (_targetsSave != _save) { RebuildLiveTargets(); _targetsSave = _save; }
+        if (_targetsSave != _save)
+        {
+            RebuildLiveTargets();
+            _targetsSave = _save;
+            if (_trainer.Attached) PrefillCreditFromSave();   // refresh auto-fill after a reload
+        }
 
         bool a = _trainer.Attached;
         _attachBtn.Enabled = !a;
@@ -468,6 +485,7 @@ public sealed partial class MainForm
             return;
         }
 
+        RefreshSaveFromDisk();
         var vs = (_save?.PlayerCarrierHold as VehicleHoldContainer)?.State;
         if (vs is not { HasHitpoints: true, HasFuel: true })
         {

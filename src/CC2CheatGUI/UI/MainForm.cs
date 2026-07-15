@@ -66,7 +66,13 @@ public sealed partial class MainForm : Form
         _saveButton = save;
 
         var reload = new FlatButton("RELOAD") { Width = 78, Height = 34 };
-        reload.Click += (_, _) => RefreshSlots();
+        // Re-read the currently loaded save from disk (so it picks up an in-game save), rather than
+        // resetting the slot picker to the first slot.
+        reload.Click += (_, _) =>
+        {
+            if (_save != null && System.IO.File.Exists(_save.Path)) LoadSave(_save.Path);
+            else RefreshSlots();
+        };
         var open = new FlatButton("OPEN…") { Width = 78, Height = 34 };
         open.Click += (_, _) => OpenFileManually();
 

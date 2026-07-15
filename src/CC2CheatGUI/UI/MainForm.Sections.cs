@@ -23,6 +23,7 @@ public sealed partial class MainForm
         _refreshBlueprints?.Invoke();
         _refreshIslands?.Invoke();
         _refreshFleet?.Invoke();
+        _refreshTrainer?.Invoke();   // so RELOAD re-fingerprints the live targets from the fresh save
     }
 
     private void RefreshCurrentSection()
