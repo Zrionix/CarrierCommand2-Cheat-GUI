@@ -69,7 +69,7 @@ public sealed partial class MainForm
         var creditPanel = new ConsolePanel { Title = "SET / FREEZE CREDIT", Dock = DockStyle.Fill, TitleFill = Cc2Theme.Green };
         creditPanel.Controls.Add(BuildCreditControls());
 
-        var cheatsPanel = new ConsolePanel { Title = "TOGGLE CHEATS", Dock = DockStyle.Top, Height = 172, TitleFill = Cc2Theme.Cyan };
+        var cheatsPanel = new ConsolePanel { Title = "TOGGLE CHEATS", Dock = DockStyle.Top, Height = 240, TitleFill = Cc2Theme.Cyan };
         _cheatList = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Cc2Theme.Black, Padding = new Padding(10), AutoScroll = true };
         cheatsPanel.Controls.Add(_cheatList);
 
@@ -450,23 +450,27 @@ public sealed partial class MainForm
         _cheatList.Controls.Clear();
         foreach (var cheat in _trainer.Cheats)
             _cheatList.Controls.Add(BuildCheatRow(cheat, a));
-        _cheatList.Controls.Add(BuildProtectRow(a));
+        _cheatList.Controls.Add(BuildToggleRow("Protect Carrier (freeze hull)",
+            "player-only  •  locates your carrier via the loaded save, right after loading",
+            a, _trainer.Protecting, TrainerToggleProtect));
+        _cheatList.Controls.Add(BuildToggleRow("Unlimited Fuel (carrier)",
+            "player-only  •  holds fuel at its current level (refuel first for a full tank)",
+            a, _trainer.FuelFreezing, TrainerToggleFuel));
     }
 
-    private Control BuildProtectRow(bool attached)
+    private Control BuildToggleRow(string title, string subtitle, bool attached, bool on, Action onClick)
     {
         var row = new Panel { Width = 380, Height = 58, Margin = new Padding(0, 0, 0, 8), BackColor = Cc2Theme.Screen };
-        bool on = _trainer.Protecting;
         var toggle = new FlatButton(on ? "● ON" : "○ OFF")
         {
             Accent = on ? Cc2Theme.Green : Cc2Theme.MidGrey,
             Width = 84, Height = 40, Location = new Point(6, 8), Enabled = attached,
         };
-        toggle.Click += (_, _) => TrainerToggleProtect();
+        toggle.Click += (_, _) => onClick();
 
-        var name = Style.Label("Protect Carrier (freeze hull)", attached ? Cc2Theme.White : Cc2Theme.DimGrey, Cc2Theme.PixelBody);
+        var name = Style.Label(title, attached ? Cc2Theme.White : Cc2Theme.DimGrey, Cc2Theme.PixelBody);
         name.Location = new Point(100, 8);
-        var sub = Style.Label("player-only  •  locate via your loaded save, right after loading", Cc2Theme.MidGrey, Cc2Theme.PixelSmall);
+        var sub = Style.Label(subtitle, Cc2Theme.MidGrey, Cc2Theme.PixelSmall);
         sub.Location = new Point(100, 30);
 
         row.Controls.Add(toggle);
@@ -475,44 +479,55 @@ public sealed partial class MainForm
         return row;
     }
 
-    private void TrainerToggleProtect()
+    /// <summary>Locate the player carrier in memory (HP + fuel) once per session; reused by both carrier toggles.</summary>
+    private bool EnsureCarrierLocated()
     {
-        if (_trainer.Protecting)
-        {
-            _trainer.StopProtect();
-            SetStatus("Carrier protection OFF.");
-            RefreshTrainer();
-            return;
-        }
+        if (_trainer.CarrierHpCount > 0 || _trainer.CarrierFuelCount > 0) return true;
 
         RefreshSaveFromDisk();
         var vs = (_save?.PlayerCarrierHold as VehicleHoldContainer)?.State;
         if (vs is not { HasHitpoints: true, HasFuel: true })
         {
-            Cc2MessageBox.Show(this, "PROTECT CARRIER",
+            Cc2MessageBox.Show(this, "CARRIER",
                 "Load the save you're playing (top-left) first — I locate your carrier by its HP + fuel.",
                 Cc2Theme.Yellow);
-            return;
+            return false;
         }
 
         int hp = (int)(vs.Hitpoints ?? 0);
         int fuelBits = BitConverter.SingleToInt32Bits((float)(vs.Fuel ?? 0));
         int n;
         try { n = _trainer.LocateCarrierProtect(fuelBits, hp); }
-        catch (Exception ex) { Cc2MessageBox.Show(this, "PROTECT CARRIER", ex.Message, Cc2Theme.Red); return; }
+        catch (Exception ex) { Cc2MessageBox.Show(this, "CARRIER", ex.Message, Cc2Theme.Red); return false; }
 
         if (n == 0)
         {
-            Cc2MessageBox.Show(this, "PROTECT CARRIER",
+            Cc2MessageBox.Show(this, "CARRIER",
                 "Couldn't pin down your carrier in memory.\n\n" +
-                "It's found by your carrier's exact fuel level, so do this right after loading the save " +
-                "(before you've burned much fuel). Reload the save in-game and try again.",
+                "It's found by your carrier's exact fuel level, so do this right after loading or saving " +
+                "(before you've burned much fuel). Save in-game (F5) and try again.",
                 Cc2Theme.Red);
-            return;
+            return false;
         }
+        return true;
+    }
 
+    private void TrainerToggleProtect()
+    {
+        if (_trainer.Protecting) { _trainer.StopProtect(); SetStatus("Carrier protection OFF."); RefreshTrainer(); return; }
+        if (!EnsureCarrierLocated()) return;
         _trainer.StartProtect(100_000);
-        SetStatus($"Carrier protection ON — hull frozen at 100,000 ({n} field(s)). Player-only.");
+        SetStatus($"Carrier protection ON — hull frozen ({_trainer.CarrierHpCount} field(s)). Player-only.");
+        RefreshTrainer();
+    }
+
+    private void TrainerToggleFuel()
+    {
+        if (_trainer.FuelFreezing) { _trainer.StopFuelFreeze(); SetStatus("Unlimited fuel OFF."); RefreshTrainer(); return; }
+        if (!EnsureCarrierLocated()) return;
+        _trainer.StartFuelFreeze();   // hold at current level
+        var f = _trainer.ReadCarrierFuel();
+        SetStatus($"Unlimited fuel ON — carrier fuel held{(f is > 0 ? $" at {f:N0}L" : "")}. Player-only.");
         RefreshTrainer();
     }
 

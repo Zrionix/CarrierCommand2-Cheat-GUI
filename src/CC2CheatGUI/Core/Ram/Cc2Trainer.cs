@@ -290,15 +290,20 @@ public sealed class Cc2Trainer : IDisposable
 
     public void ResetHold() { _holdCopies.Clear(); _holdRow = Array.Empty<int>(); }
 
-    // ---- player-only carrier protection (HP freeze) ----
+    // ---- player-only carrier protection (HP + fuel freeze) ----
 
     private readonly List<IntPtr> _carrierHp = new();
+    private readonly List<IntPtr> _carrierFuel = new();
     private System.Threading.Timer? _protectTimer;
+    private System.Threading.Timer? _fuelTimer;
     private int _protectValue = 100000;
+    private float _fuelValue;
 
     /// <summary>Number of resolved carrier HP fields (0 = not located).</summary>
     public int CarrierHpCount => _carrierHp.Count;
+    public int CarrierFuelCount => _carrierFuel.Count;
     public bool Protecting => _protectTimer != null;
+    public bool FuelFreezing => _fuelTimer != null;
 
     /// <summary>
     /// Locate the player carrier's HP field(s) by anchoring on its distinctive exact fuel value (the
@@ -308,10 +313,12 @@ public sealed class Cc2Trainer : IDisposable
     public int LocateCarrierProtect(int fuelBits, int hp, int windowBytes = 1024)
     {
         _carrierHp.Clear();
+        _carrierFuel.Clear();
         if (_mem == null || _scanner == null || hp <= 0) return 0;
 
         var fuelHits = _scanner.ScanInt32(fuelBits);
         if (fuelHits.Count == 0 || fuelHits.Count > 64) return 0;   // 0 = fuel drifted; many = not distinctive
+        _carrierFuel.AddRange(fuelHits);   // the exact-fuel matches ARE the carrier's fuel field(s)
 
         var seen = new HashSet<long>();
         var buf = new byte[windowBytes];
@@ -345,7 +352,43 @@ public sealed class Cc2Trainer : IDisposable
         _protectTimer = null;
     }
 
-    public void ResetProtect() { StopProtect(); _carrierHp.Clear(); }
+    /// <summary>
+    /// Freeze the located carrier fuel so it never drains (player-only). Pass a value to hold at it, or
+    /// 0 to hold at the current level (keeps the gauge normal; refuel first for a full tank).
+    /// </summary>
+    public void StartFuelFreeze(float value = 0)
+    {
+        if (_mem == null || _carrierFuel.Count == 0) return;
+        if (value <= 0) { var cur = ReadCarrierFuel(); if (cur is > 0) value = cur.Value; else return; }
+        _fuelValue = value;
+        foreach (var a in _carrierFuel) { try { _mem.Write(a, _fuelValue); } catch { } }
+        _fuelTimer ??= new System.Threading.Timer(_ =>
+        {
+            if (_mem == null) return;
+            foreach (var a in _carrierFuel) { try { _mem.Write(a, _fuelValue); } catch { } }
+        }, null, 0, 200);
+    }
+
+    public void StopFuelFreeze()
+    {
+        _fuelTimer?.Dispose();
+        _fuelTimer = null;
+    }
+
+    /// <summary>Read the current carrier fuel from the first located fuel field (null if none).</summary>
+    public float? ReadCarrierFuel()
+    {
+        if (_mem == null || _carrierFuel.Count == 0) return null;
+        try { return _mem.Read<float>(_carrierFuel[0]); } catch { return null; }
+    }
+
+    public void ResetProtect()
+    {
+        StopProtect();
+        StopFuelFreeze();
+        _carrierHp.Clear();
+        _carrierFuel.Clear();
+    }
 
     /// <summary>Current values at the located carrier HP field(s) (for status/verification).</summary>
     public int[] ReadCarrierHpValues()
