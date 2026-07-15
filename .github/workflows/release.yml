@@ -52,5 +52,18 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: publish/CC2CheatGUI.exe
+          body: |
+            **Carrier Command 2 — Save Editor + Live Trainer** (single-player only).
+
+            Download **`CC2CheatGUI.exe`** below and run it — it's self-contained, so no .NET
+            install is needed. The first launch may show a one-time Windows SmartScreen warning
+            (**More info → Run anyway**), which is expected for an unsigned tool.
+
+            - **Save editor** (game closed): credits, inventory, blueprints, island ownership, fleet
+              health / fuel / ammo, plus one-click cheat presets.
+            - **Live trainer** (game running, no reload): set credits, unlimited ammo, live carrier
+              hold + warehouse inventory editing, and player-only carrier protection.
+
+            Always let the tool make its automatic `.bak` backup, and close the game before saving.
           generate_release_notes: true
           fail_on_unmatched_files: true
