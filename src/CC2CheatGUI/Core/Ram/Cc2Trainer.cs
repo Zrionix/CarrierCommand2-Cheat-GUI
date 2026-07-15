@@ -112,6 +112,13 @@ public sealed class Cc2Trainer : IDisposable
 
     public void ResetCreditSearch() => CreditCandidates.Clear();
 
+    /// <summary>Read the live credit from the first resolved candidate (null if none / unreadable).</summary>
+    public int? ReadCredit()
+    {
+        if (_mem == null || CreditCandidates.Count == 0) return null;
+        try { return _mem.Read<int>(CreditCandidates[0]); } catch { return null; }
+    }
+
     /// <summary>Write a new credit value to every candidate address.</summary>
     public int SetCredit(int value)
     {
@@ -172,14 +179,10 @@ public sealed class Cc2Trainer : IDisposable
             AffectsEnemies = true,
             Notes = "NOPs every ammo-decrement site. Also affects enemy units (shared code).",
         },
-        new TrainerCheat
-        {
-            Id = "god_mode",
-            Label = "No Damage / God Mode",
-            Signatures = new[] { "89 8E 5C 01 00 00" },
-            AffectsEnemies = true,
-            Experimental = true,
-            Notes = "NOPs the hull-damage store. Experimental on the current build — affects all units.",
-        },
+        // NOTE: a "God Mode" cheat that blindly NOPs the hull-damage store was intentionally removed.
+        // That store is shared by every unit, so patching it makes ENEMY units invincible too — which
+        // makes the game unwinnable and its on/off effect confusing. A correct, player-only version
+        // requires locking onto the player carrier in memory (a code-cave team check, or a targeted
+        // health freeze) — tracked alongside the live-inventory targeting work, not a blind NOP.
     };
 }

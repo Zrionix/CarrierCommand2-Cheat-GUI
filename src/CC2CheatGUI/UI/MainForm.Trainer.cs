@@ -25,8 +25,8 @@ public sealed partial class MainForm
             Font = Cc2Theme.PixelSmall,
             Padding = new Padding(12, 8, 12, 8),
             Text = "⚠  LIVE MEMORY EDITING — SINGLE-PLAYER ONLY. Edits apply instantly to the running game (no reload).\n" +
-                   "Ammo/health cheats sit on code shared with the AI, so they also affect enemy units. Values are found by " +
-                   "signature scan each attach; a game patch may require re-finding them.",
+                   "The Unlimited Ammo cheat sits on code shared with the AI, so it also grants enemy units unlimited ammo. " +
+                   "Credit is found by signature scan each attach; a game patch may require re-finding it.",
         };
 
         // Attach bar
@@ -69,8 +69,8 @@ public sealed partial class MainForm
         var p = new Panel { Dock = DockStyle.Fill, BackColor = Cc2Theme.Black, Padding = new Padding(14) };
 
         var step1 = new SectionHeader("STEP 1 — FIND YOUR CREDIT") { Accent = Cc2Theme.Green };
-        var lbl1 = Style.Label("Read the credit shown on your in-game HUD and enter it:", Cc2Theme.MidGrey, Cc2Theme.PixelSmall);
-        lbl1.Location = new Point(4, 30); lbl1.MaximumSize = new Size(390, 0);
+        var lbl1 = Style.Label("Your current credit — auto-filled from your loaded save when you attach.\nEdit it only if you've earned/spent since loading, then click FIND:", Cc2Theme.MidGrey, Cc2Theme.PixelSmall);
+        lbl1.Location = new Point(4, 26); lbl1.MaximumSize = new Size(390, 0);
 
         _curCredit = new NumericUpDown { Maximum = 2_000_000_000, Minimum = 0, Width = 160, Location = new Point(4, 56) };
         Style.ApplyDark(_curCredit);
@@ -117,12 +117,29 @@ public sealed partial class MainForm
         {
             _trainer.Attach();
             SetStatus(_trainer.StatusText);
+            PrefillCreditFromSave();
         }
         catch (Exception ex)
         {
             Cc2MessageBox.Show(this, "ATTACH FAILED", ex.Message, Cc2Theme.Red);
         }
         RefreshTrainer();
+    }
+
+    /// <summary>Auto-fill the "current credit" box from the loaded save so the user rarely has to type it.</summary>
+    private void PrefillCreditFromSave()
+    {
+        if (!_trainer.Attached) return;
+        if (_save?.PlayerTeam == null)
+        {
+            _creditFindStatus.ForeColor = Cc2Theme.MidGrey;
+            _creditFindStatus.Text = "Tip: load your save (top-left) so I can auto-fill your credit — then just click FIND.";
+            return;
+        }
+        long c = Math.Clamp(_save.PlayerTeam.Currency, 0, (long)_curCredit.Maximum);
+        _curCredit.Value = c;
+        _creditFindStatus.ForeColor = Cc2Theme.Cyan;
+        _creditFindStatus.Text = $"Auto-filled ₵{c:N0} from your save. Click FIND to lock on (edit the number first if it's changed in-game).";
     }
 
     private void TrainerDetach()
@@ -154,8 +171,11 @@ public sealed partial class MainForm
         {
             int n = _trainer.SetCredit((int)_newCredit.Value);
             SetStatus($"Wrote {(long)_newCredit.Value:N0} to {n} address(es). Check your in-game HUD.");
+            var live = _trainer.ReadCredit();
             _creditFindStatus.ForeColor = Cc2Theme.Green;
-            _creditFindStatus.Text = $"Set {n} address(es) to {(long)_newCredit.Value:N0}.";
+            _creditFindStatus.Text = live.HasValue
+                ? $"Set {n} address(es). Live credit now reads ₵{(long)live.Value:N0}."
+                : $"Set {n} address(es) to {(long)_newCredit.Value:N0}.";
         }
         catch (Exception ex) { Cc2MessageBox.Show(this, "WRITE FAILED", ex.Message, Cc2Theme.Red); }
     }
@@ -186,6 +206,9 @@ public sealed partial class MainForm
         if (!a) { _setCreditBtn.Enabled = _freezeBtn.Enabled = false; }
         _trainerStatus.ForeColor = a ? Cc2Theme.Green : Cc2Theme.MidGrey;
         _trainerStatus.Text = a ? _trainer.StatusText + "\n" + _trainer.ModuleInfo : _trainer.StatusText;
+
+        // If a save was loaded after attaching, auto-fill the (still-untouched) credit box from it.
+        if (a && _curCredit.Value == 0 && _save?.PlayerTeam != null) PrefillCreditFromSave();
 
         _cheatList.Controls.Clear();
         foreach (var cheat in _trainer.Cheats)

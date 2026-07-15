@@ -179,16 +179,23 @@ public sealed partial class MainForm : Form
     private Panel _statusBar = null!;
     private void BuildStatusBar()
     {
-        var bar = new Panel { Dock = DockStyle.Bottom, Height = 26, BackColor = Cc2Theme.Black };
+        var bar = new BufferedPanel { Dock = DockStyle.Bottom, Height = 26, BackColor = Cc2Theme.Black };
         bar.Paint += (_, e) =>
         {
             var g = e.Graphics;
+            // Clear the full bar each paint so resized/relaid text never leaves trails.
+            using (var bg = new SolidBrush(Cc2Theme.Black)) g.FillRectangle(bg, bar.ClientRectangle);
             using (var b = new SolidBrush(Cc2Theme.Grid)) g.FillRectangle(b, 0, 0, bar.Width, 1);
-            Cc2Theme.DrawPixelText(g, _statusText, Cc2Theme.PixelSmall, Cc2Theme.MidGrey, 10, 6);
+            // Clip the left status text so it can't run under the right-aligned indicator.
             string right = _dirty ? "● UNSAVED CHANGES" : (_save != null ? "● SAVED" : "");
-            var col = _dirty ? Cc2Theme.Yellow : Cc2Theme.Green;
             var sz = g.MeasureString(right, Cc2Theme.PixelSmall);
-            Cc2Theme.DrawPixelText(g, right, Cc2Theme.PixelSmall, col, bar.Width - (int)sz.Width - 12, 6);
+            int rightX = bar.Width - (int)sz.Width - 12;
+            var leftClip = g.Clip;
+            g.SetClip(new Rectangle(10, 0, Math.Max(0, rightX - 18), bar.Height));
+            Cc2Theme.DrawPixelText(g, _statusText, Cc2Theme.PixelSmall, Cc2Theme.MidGrey, 10, 6);
+            g.Clip = leftClip;
+            var col = _dirty ? Cc2Theme.Yellow : Cc2Theme.Green;
+            Cc2Theme.DrawPixelText(g, right, Cc2Theme.PixelSmall, col, rightX, 6);
         };
         _statusBar = bar;
         Controls.Add(bar);

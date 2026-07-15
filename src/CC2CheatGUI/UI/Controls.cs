@@ -4,6 +4,21 @@ using System.Drawing.Text;
 namespace CC2CheatGUI.UI;
 
 // ---------------------------------------------------------------------------
+// BufferedPanel — a Panel that fully repaints on resize and double-buffers, so
+// owner-drawn content (e.g. right-aligned status text) never leaves trails when
+// the window is resized. Plain WinForms panels only invalidate the newly exposed
+// strip on resize, which smears manually-drawn text.
+// ---------------------------------------------------------------------------
+public sealed class BufferedPanel : Panel
+{
+    public BufferedPanel()
+    {
+        SetStyle(ControlStyles.UserPaint | ControlStyles.AllPaintingInWmPaint |
+                 ControlStyles.OptimizedDoubleBuffer | ControlStyles.ResizeRedraw, true);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ConsolePanel — flat black panel with a 1px hard border and an optional
 // inverted title bar. The panel IS the core CC2 motif.
 // ---------------------------------------------------------------------------
