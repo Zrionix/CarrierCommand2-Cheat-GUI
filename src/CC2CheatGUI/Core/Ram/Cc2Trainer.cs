@@ -131,6 +131,106 @@ public sealed class Cc2Trainer : IDisposable
         return n;
     }
 
+    // ---- live carrier hold ----
+
+    private readonly List<IntPtr> _holdCopies = new();
+    private int[] _holdRow = Array.Empty<int>();
+
+    /// <summary>Number of in-memory copies of the located hold (0 = not located).</summary>
+    public int HoldCopyCount => _holdCopies.Count;
+    /// <summary>Positional slot count of the located hold.</summary>
+    public int HoldSlotCount => _holdRow.Length;
+
+    /// <summary>
+    /// Locate every copy of the player's carrier hold in the running game by fingerprinting the
+    /// positional quantity row taken from the loaded save. Returns the number of copies found.
+    /// </summary>
+    public int LocateHold(int[] saveRow)
+    {
+        _holdCopies.Clear();
+        _holdRow = Array.Empty<int>();
+        if (_mem == null || _scanner == null || saveRow.Length == 0) return 0;
+        int n = saveRow.Length;
+
+        // Anchor on distinctive values (fast, precise) plus the largest stable non-consumable slots
+        // (so live copies are still found after ammo/fuel have drifted from the saved values).
+        var anchors = new List<int>();
+        anchors.AddRange(Enumerable.Range(0, n).Where(i => saveRow[i] >= 50));
+        anchors.AddRange(Enumerable.Range(0, n)
+            .Where(i => saveRow[i] >= 4 && IsNonConsumable(i))
+            .OrderByDescending(i => saveRow[i]).Take(6));
+        var anchorSlots = anchors.Distinct().ToArray();
+        if (anchorSlots.Length == 0)
+            anchorSlots = Enumerable.Range(0, n).Where(i => saveRow[i] > 0)
+                .OrderByDescending(i => saveRow[i]).Take(8).ToArray();
+
+        int minMatch = Math.Max(24, (int)(n * 0.55));
+        _holdCopies.AddRange(_scanner.FindRowCopies(saveRow, anchorSlots, minMatch));
+        _holdRow = (int[])saveRow.Clone();
+        return _holdCopies.Count;
+    }
+
+    private static bool IsNonConsumable(int itemId)
+    {
+        var c = ItemCatalog.CategoryOf(itemId);
+        return c is ItemCatalog.CatVehicles or ItemCatalog.CatTurrets or ItemCatalog.CatComponents;
+    }
+
+    /// <summary>Read the current live quantities of the located hold (from the first copy).</summary>
+    public int[]? ReadHold()
+    {
+        if (_mem == null || _holdCopies.Count == 0 || _holdRow.Length == 0) return null;
+        try
+        {
+            var buf = _mem.ReadBytes(_holdCopies[0], _holdRow.Length * 4);
+            var vals = new int[_holdRow.Length];
+            for (int i = 0; i < vals.Length; i++) vals[i] = BitConverter.ToInt32(buf, i * 4);
+            return vals;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>Write one slot's quantity to every located copy. Returns the number of copies written.</summary>
+    public int WriteHoldSlot(int slot, int value)
+    {
+        if (_mem == null || slot < 0 || slot >= _holdRow.Length) return 0;
+        int n = 0;
+        foreach (var b in _holdCopies)
+        {
+            try { _mem.Write(new IntPtr(b.ToInt64() + slot * 4L), value); n++; } catch { }
+        }
+        return n;
+    }
+
+    /// <summary>Write a full/partial quantity row to every located copy. Returns copies written.</summary>
+    public int WriteHold(int[] values)
+    {
+        if (_mem == null || _holdCopies.Count == 0) return 0;
+        int n = 0;
+        foreach (var b in _holdCopies)
+        {
+            bool ok = true;
+            for (int i = 0; i < values.Length && i < _holdRow.Length; i++)
+            {
+                try { _mem.Write(new IntPtr(b.ToInt64() + i * 4L), values[i]); }
+                catch { ok = false; break; }
+            }
+            if (ok) n++;
+        }
+        return n;
+    }
+
+    /// <summary>Set every slot of the located hold to <paramref name="value"/> across all copies.</summary>
+    public int FillHold(int value)
+    {
+        if (_holdRow.Length == 0) return 0;
+        var vals = new int[_holdRow.Length];
+        Array.Fill(vals, value);
+        return WriteHold(vals);
+    }
+
+    public void ResetHold() { _holdCopies.Clear(); _holdRow = Array.Empty<int>(); }
+
     public void FreezeCredit(int value)
     {
         FrozenCredit = value;
@@ -160,6 +260,7 @@ public sealed class Cc2Trainer : IDisposable
                 if (cheat.Enabled) { try { DisableCheat(cheat); } catch { } }
         }
         CreditCandidates.Clear();
+        ResetHold();
         _mem?.Dispose();
         _mem = null;
         _scanner = null;

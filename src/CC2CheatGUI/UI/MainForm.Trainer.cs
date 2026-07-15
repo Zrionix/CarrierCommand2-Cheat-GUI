@@ -1,3 +1,4 @@
+using CC2CheatGUI.Core;
 using CC2CheatGUI.Core.Ram;
 
 namespace CC2CheatGUI.UI;
@@ -10,6 +11,14 @@ public sealed partial class MainForm
     private NumericUpDown _curCredit = null!, _newCredit = null!;
     private Label _creditFindStatus = null!;
     private FlatButton _findCreditBtn = null!, _setCreditBtn = null!, _freezeBtn = null!;
+
+    // live carrier hold
+    private DataGridView _holdGrid = null!;
+    private FlatButton _holdLocateBtn = null!, _holdApplyBtn = null!, _holdFillBtn = null!;
+    private NumericUpDown _holdFillValue = null!;
+    private Label _holdStatus = null!;
+    private int[]? _holdLiveValues;
+    private bool _holdLocating;
 
     private Panel BuildTrainerSection()
     {
@@ -42,19 +51,28 @@ public sealed partial class MainForm
         attachBar.Controls.Add(_detachBtn);
         attachBar.Controls.Add(_trainerStatus);
 
-        // Body: cheats (left) + credit (right)
+        // Body: left column (cheats + credit) | live carrier hold (fills the rest).
         var body = new Panel { Dock = DockStyle.Fill, BackColor = Cc2Theme.Screen };
 
-        var cheatsPanel = new ConsolePanel { Title = "TOGGLE CHEATS", Dock = DockStyle.Fill, TitleFill = Cc2Theme.Cyan };
+        var leftCol = new Panel { Dock = DockStyle.Left, Width = 430, BackColor = Cc2Theme.Screen };
+
+        var creditPanel = new ConsolePanel { Title = "SET / FREEZE CREDIT", Dock = DockStyle.Fill, TitleFill = Cc2Theme.Green };
+        creditPanel.Controls.Add(BuildCreditControls());
+
+        var cheatsPanel = new ConsolePanel { Title = "TOGGLE CHEATS", Dock = DockStyle.Top, Height = 130, TitleFill = Cc2Theme.Cyan };
         _cheatList = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Cc2Theme.Black, Padding = new Padding(10), AutoScroll = true };
         cheatsPanel.Controls.Add(_cheatList);
 
-        var creditPanel = new ConsolePanel { Title = "SET / FREEZE CREDIT", Dock = DockStyle.Right, Width = 430, TitleFill = Cc2Theme.Green };
-        creditPanel.Controls.Add(BuildCreditControls());
+        leftCol.Controls.Add(creditPanel);
+        leftCol.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 10, BackColor = Cc2Theme.Screen });
+        leftCol.Controls.Add(cheatsPanel);
 
-        body.Controls.Add(cheatsPanel);
-        body.Controls.Add(new Panel { Dock = DockStyle.Right, Width = 12, BackColor = Cc2Theme.Screen });
-        body.Controls.Add(creditPanel);
+        var holdPanel = new ConsolePanel { Title = "LIVE CARRIER HOLD", Dock = DockStyle.Fill, TitleFill = Cc2Theme.Orange };
+        holdPanel.Controls.Add(BuildHoldControls());
+
+        body.Controls.Add(holdPanel);
+        body.Controls.Add(new Panel { Dock = DockStyle.Left, Width = 12, BackColor = Cc2Theme.Screen });
+        body.Controls.Add(leftCol);
 
         host.Controls.Add(body);
         host.Controls.Add(attachBar);
@@ -107,6 +125,60 @@ public sealed partial class MainForm
         p.Controls.Add(_freezeBtn);
         step1.Dock = DockStyle.None; step1.Location = new Point(0, 0); step1.Width = 400;
         return p;
+    }
+
+    private Control BuildHoldControls()
+    {
+        var p = new Panel { Dock = DockStyle.Fill, BackColor = Cc2Theme.Black };
+
+        var top = new Panel { Dock = DockStyle.Top, Height = 62, BackColor = Cc2Theme.Black, Padding = new Padding(10, 8, 10, 4) };
+        _holdLocateBtn = new FlatButton("◎  LOCATE MY HOLD") { Accent = Cc2Theme.Orange, Width = 190, Height = 30, Location = new Point(10, 8), Enabled = false };
+        _holdLocateBtn.Click += (_, _) => TrainerLocateHold();
+        _holdStatus = Style.Label("Load your in-game save, then LOCATE.", Cc2Theme.MidGrey, Cc2Theme.PixelSmall);
+        _holdStatus.Location = new Point(210, 10); _holdStatus.MaximumSize = new Size(330, 0);
+        top.Controls.Add(_holdLocateBtn);
+        top.Controls.Add(_holdStatus);
+
+        _holdGrid = Style.Grid();
+        _holdGrid.Dock = DockStyle.Fill;
+        _holdGrid.ReadOnly = false;
+        _holdGrid.AllowUserToAddRows = false;
+        AddHoldCol("ID", 7, true);
+        AddHoldCol("ITEM", 34, true);
+        AddHoldCol("CATEGORY", 23, true);
+        AddHoldCol("LIVE", 16, true);
+        AddHoldCol("NEW QTY", 20, false);
+        _holdGrid.CellEndEdit += HoldGrid_CellEndEdit;
+        _holdGrid.DataError += (_, e) => e.ThrowException = false;
+
+        var bottom = new Panel { Dock = DockStyle.Bottom, Height = 46, BackColor = Cc2Theme.Black, Padding = new Padding(10, 8, 10, 8) };
+        var fillLbl = new Label { Text = "SET ALL TO", AutoSize = true, ForeColor = Cc2Theme.MidGrey, BackColor = Color.Transparent, Font = Cc2Theme.PixelSmall, Location = new Point(8, 15) };
+        _holdFillValue = new NumericUpDown { Maximum = 1_000_000, Minimum = 0, Value = 999, Width = 90, Location = new Point(92, 11) };
+        Style.ApplyDark(_holdFillValue);
+        _holdFillBtn = new FlatButton("SET ALL NEW") { Accent = Cc2Theme.Cyan, Width = 116, Height = 28, Location = new Point(190, 9), Enabled = false };
+        _holdFillBtn.Click += (_, _) => HoldSetAllNew((int)_holdFillValue.Value);
+        _holdApplyBtn = new FlatButton("APPLY TO GAME") { Accent = Cc2Theme.Green, Width = 150, Height = 28, Location = new Point(316, 9), Enabled = false };
+        _holdApplyBtn.Click += (_, _) => TrainerApplyHold();
+        bottom.Controls.Add(fillLbl);
+        bottom.Controls.Add(_holdFillValue);
+        bottom.Controls.Add(_holdFillBtn);
+        bottom.Controls.Add(_holdApplyBtn);
+
+        p.Controls.Add(_holdGrid);
+        p.Controls.Add(bottom);
+        p.Controls.Add(top);
+        return p;
+    }
+
+    private void AddHoldCol(string header, int weight, bool readOnly)
+    {
+        _holdGrid.Columns.Add(new DataGridViewTextBoxColumn
+        {
+            HeaderText = header,
+            FillWeight = weight,
+            ReadOnly = readOnly,
+            SortMode = DataGridViewColumnSortMode.NotSortable,
+        });
     }
 
     // ---- actions ----
@@ -197,13 +269,115 @@ public sealed partial class MainForm
         _freezeBtn.Invalidate();
     }
 
+    private void TrainerLocateHold()
+    {
+        if (!_trainer.Attached || _holdLocating) return;
+        var hold = _save?.PlayerCarrierHold;
+        if (hold == null)
+        {
+            _holdStatus.ForeColor = Cc2Theme.Red;
+            _holdStatus.Text = "Load the save you're playing (top-left) — I need your carrier's hold to fingerprint it.";
+            return;
+        }
+        int[] row = SaveFile.RowOf(hold);
+        _holdLocating = true;
+        _holdLocateBtn.Enabled = false;
+        _holdApplyBtn.Enabled = _holdFillBtn.Enabled = false;
+        _holdStatus.ForeColor = Cc2Theme.Cyan;
+        _holdStatus.Text = "Locating your carrier hold in the game's memory… (this takes a few seconds)";
+
+        System.Threading.Tasks.Task.Run(() =>
+        {
+            int copies = 0; int[]? live = null; string err = "";
+            try { copies = _trainer.LocateHold(row); live = _trainer.ReadHold(); }
+            catch (Exception ex) { err = ex.Message; }
+            BeginInvoke((Action)(() =>
+            {
+                _holdLocating = false;
+                _holdLocateBtn.Enabled = _trainer.Attached;
+                if (err.Length > 0)
+                {
+                    _holdStatus.ForeColor = Cc2Theme.Red;
+                    _holdStatus.Text = "Locate failed: " + err;
+                    return;
+                }
+                if (copies == 0 || live == null)
+                {
+                    _holdApplyBtn.Enabled = _holdFillBtn.Enabled = false;
+                    _holdStatus.ForeColor = Cc2Theme.Red;
+                    _holdStatus.Text = "Couldn't find your hold. Load the SAME save you're playing in-game, then LOCATE again.";
+                    return;
+                }
+                PopulateHoldGrid(live);
+                _holdApplyBtn.Enabled = _holdFillBtn.Enabled = true;
+                _holdStatus.ForeColor = Cc2Theme.Green;
+                _holdStatus.Text = $"Locked on ({copies} copy{(copies == 1 ? "" : "ies")} found). Edit NEW QTY (or Fill + SET ALL), then APPLY TO GAME.";
+            }));
+        });
+    }
+
+    private void PopulateHoldGrid(int[] live)
+    {
+        _holdLiveValues = live;
+        _holdGrid.Rows.Clear();
+        for (int i = 0; i < live.Length; i++)
+            _holdGrid.Rows.Add(i, ItemCatalog.NameOf(i), ItemCatalog.CategoryOf(i), live[i], live[i]);
+    }
+
+    private void HoldSetAllNew(int value)
+    {
+        foreach (DataGridViewRow r in _holdGrid.Rows) r.Cells[4].Value = value;
+    }
+
+    private void HoldGrid_CellEndEdit(object? sender, DataGridViewCellEventArgs e)
+    {
+        if (e.ColumnIndex != 4 || e.RowIndex < 0) return;
+        var cell = _holdGrid.Rows[e.RowIndex].Cells[4];
+        long fallback = _holdLiveValues != null && e.RowIndex < _holdLiveValues.Length ? _holdLiveValues[e.RowIndex] : 0;
+        cell.Value = long.TryParse(cell.Value?.ToString()?.Replace(",", "").Trim(), out var v) && v >= 0
+            ? (int)Math.Min(v, int.MaxValue)
+            : (int)fallback;
+    }
+
+    private void TrainerApplyHold()
+    {
+        if (_trainer.HoldCopyCount == 0) return;
+        try
+        {
+            int n = _trainer.HoldSlotCount;
+            var vals = new int[n];
+            for (int i = 0; i < n; i++)
+            {
+                long fallback = _holdLiveValues != null && i < _holdLiveValues.Length ? _holdLiveValues[i] : 0;
+                object? cell = i < _holdGrid.Rows.Count ? _holdGrid.Rows[i].Cells[4].Value : null;
+                vals[i] = int.TryParse(cell?.ToString()?.Replace(",", "").Trim(), out var v) ? v : (int)fallback;
+            }
+            int copies = _trainer.WriteHold(vals);
+            var live = _trainer.ReadHold();
+            if (live != null) PopulateHoldGrid(live);
+            _holdStatus.ForeColor = Cc2Theme.Green;
+            _holdStatus.Text = $"Applied to {copies} copy(ies) — no reload needed. Check your STOCK screen.";
+            SetStatus($"Live carrier hold updated across {copies} copies.");
+        }
+        catch (Exception ex) { Cc2MessageBox.Show(this, "APPLY FAILED", ex.Message, Cc2Theme.Red); }
+    }
+
     private void RefreshTrainer()
     {
         bool a = _trainer.Attached;
         _attachBtn.Enabled = !a;
         _detachBtn.Enabled = a;
         _findCreditBtn.Enabled = a;
-        if (!a) { _setCreditBtn.Enabled = _freezeBtn.Enabled = false; }
+        _holdLocateBtn.Enabled = a && !_holdLocating;
+        if (!a)
+        {
+            _setCreditBtn.Enabled = _freezeBtn.Enabled = false;
+            _holdApplyBtn.Enabled = _holdFillBtn.Enabled = false;
+            _holdGrid.Rows.Clear();
+            _holdLiveValues = null;
+            _holdStatus.ForeColor = Cc2Theme.MidGrey;
+            _holdStatus.Text = "Attach, load the save you're playing, then LOCATE your carrier hold.";
+        }
         _trainerStatus.ForeColor = a ? Cc2Theme.Green : Cc2Theme.MidGrey;
         _trainerStatus.Text = a ? _trainer.StatusText + "\n" + _trainer.ModuleInfo : _trainer.StatusText;
 

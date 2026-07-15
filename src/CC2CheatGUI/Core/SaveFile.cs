@@ -11,6 +11,16 @@ public sealed class SaveFile
     public string Path { get; }
     public IReadOnlyList<InventoryContainer> Containers { get; private set; } = Array.Empty<InventoryContainer>();
 
+    /// <summary>The player's carrier hold container (used to fingerprint the hold in live memory), or null.</summary>
+    public InventoryContainer? PlayerCarrierHold =>
+        Containers.FirstOrDefault(c => c.Kind == ContainerKind.VehicleHold
+                                       && c.Label.Contains("Carrier") && c.Label.Contains("YOURS"))
+        ?? Containers.FirstOrDefault(c => c.Kind == ContainerKind.VehicleHold && c.Label.Contains("Carrier"));
+
+    /// <summary>The positional quantity row (index = item id) of a vehicle-hold container.</summary>
+    public static int[] RowOf(InventoryContainer hold) =>
+        hold.Entries.OrderBy(e => e.ItemId).Select(e => (int)e.Quantity).ToArray();
+
     /// <summary>Every team in the save, with directly-editable currency &amp; blueprints.</summary>
     public IReadOnlyList<TeamInfo> Teams { get; private set; } = Array.Empty<TeamInfo>();
 
