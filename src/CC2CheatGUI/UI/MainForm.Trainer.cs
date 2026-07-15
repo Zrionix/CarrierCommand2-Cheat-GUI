@@ -12,13 +12,23 @@ public sealed partial class MainForm
     private Label _creditFindStatus = null!;
     private FlatButton _findCreditBtn = null!, _setCreditBtn = null!, _freezeBtn = null!;
 
-    // live carrier hold
+    // live inventory (carrier hold + warehouses)
     private DataGridView _holdGrid = null!;
     private FlatButton _holdLocateBtn = null!, _holdApplyBtn = null!, _holdFillBtn = null!;
     private NumericUpDown _holdFillValue = null!;
     private Label _holdStatus = null!;
+    private ComboBox _targetCombo = null!;
     private int[]? _holdLiveValues;
     private bool _holdLocating;
+    private SaveFile? _targetsSave;
+
+    private sealed class LiveTarget
+    {
+        public required string Label { get; init; }
+        public required int[] Row { get; init; }
+        public required bool ConsumableDrift { get; init; }
+        public override string ToString() => Label;
+    }
 
     private Panel BuildTrainerSection()
     {
@@ -67,7 +77,7 @@ public sealed partial class MainForm
         leftCol.Controls.Add(new Panel { Dock = DockStyle.Top, Height = 10, BackColor = Cc2Theme.Screen });
         leftCol.Controls.Add(cheatsPanel);
 
-        var holdPanel = new ConsolePanel { Title = "LIVE CARRIER HOLD", Dock = DockStyle.Fill, TitleFill = Cc2Theme.Orange };
+        var holdPanel = new ConsolePanel { Title = "LIVE INVENTORY", Dock = DockStyle.Fill, TitleFill = Cc2Theme.Orange };
         holdPanel.Controls.Add(BuildHoldControls());
 
         body.Controls.Add(holdPanel);
@@ -131,11 +141,16 @@ public sealed partial class MainForm
     {
         var p = new Panel { Dock = DockStyle.Fill, BackColor = Cc2Theme.Black };
 
-        var top = new Panel { Dock = DockStyle.Top, Height = 62, BackColor = Cc2Theme.Black, Padding = new Padding(10, 8, 10, 4) };
-        _holdLocateBtn = new FlatButton("◎  LOCATE MY HOLD") { Accent = Cc2Theme.Orange, Width = 190, Height = 30, Location = new Point(10, 8), Enabled = false };
+        var top = new Panel { Dock = DockStyle.Top, Height = 90, BackColor = Cc2Theme.Black, Padding = new Padding(10, 8, 10, 4) };
+        var tgtLbl = new Label { Text = "TARGET", AutoSize = true, ForeColor = Cc2Theme.MidGrey, BackColor = Color.Transparent, Font = Cc2Theme.PixelSmall, Location = new Point(10, 13) };
+        _targetCombo = new ComboBox { Width = 430, Location = new Point(78, 9) };
+        Style.ApplyDark(_targetCombo);
+        _holdLocateBtn = new FlatButton("◎  LOCATE") { Accent = Cc2Theme.Orange, Width = 120, Height = 28, Location = new Point(10, 44), Enabled = false };
         _holdLocateBtn.Click += (_, _) => TrainerLocateHold();
-        _holdStatus = Style.Label("Load your in-game save, then LOCATE.", Cc2Theme.MidGrey, Cc2Theme.PixelSmall);
-        _holdStatus.Location = new Point(210, 10); _holdStatus.MaximumSize = new Size(330, 0);
+        _holdStatus = Style.Label("Attach, load your in-game save, pick a target, then LOCATE.", Cc2Theme.MidGrey, Cc2Theme.PixelSmall);
+        _holdStatus.Location = new Point(142, 50); _holdStatus.MaximumSize = new Size(400, 0);
+        top.Controls.Add(tgtLbl);
+        top.Controls.Add(_targetCombo);
         top.Controls.Add(_holdLocateBtn);
         top.Controls.Add(_holdStatus);
 
@@ -269,27 +284,56 @@ public sealed partial class MainForm
         _freezeBtn.Invalidate();
     }
 
+    /// <summary>Rebuild the target dropdown (carrier hold + distinctive warehouses) from the loaded save.</summary>
+    private void RebuildLiveTargets()
+    {
+        var prev = (_targetCombo.SelectedItem as LiveTarget)?.Label;
+        _targetCombo.Items.Clear();
+        if (_save != null)
+        {
+            if (_save.PlayerCarrierHold is { } hold)
+                _targetCombo.Items.Add(new LiveTarget { Label = "★ Carrier Hold", Row = SaveFile.RowOf(hold), ConsumableDrift = true });
+
+            foreach (var c in _save.Containers)
+            {
+                if (c.Kind != ContainerKind.IslandStock) continue;
+                var row = SaveFile.PositionalRow(c, 61);
+                if (!Cc2Trainer.IsRowFindable(row)) continue;   // sparse/generic stock: use the offline tab
+                _targetCombo.Items.Add(new LiveTarget { Label = c.Label, Row = row, ConsumableDrift = false });
+            }
+        }
+
+        int idx = 0;
+        if (prev != null)
+            for (int i = 0; i < _targetCombo.Items.Count; i++)
+                if (((LiveTarget)_targetCombo.Items[i]).Label == prev) { idx = i; break; }
+        if (_targetCombo.Items.Count > 0) _targetCombo.SelectedIndex = idx;
+    }
+
     private void TrainerLocateHold()
     {
         if (!_trainer.Attached || _holdLocating) return;
-        var hold = _save?.PlayerCarrierHold;
-        if (hold == null)
+        if (_targetCombo.SelectedItem is not LiveTarget target)
         {
             _holdStatus.ForeColor = Cc2Theme.Red;
-            _holdStatus.Text = "Load the save you're playing (top-left) — I need your carrier's hold to fingerprint it.";
+            _holdStatus.Text = _save == null
+                ? "Load the save you're playing (top-left) first — I fingerprint its inventory."
+                : "No live-editable inventory in this save. (Warehouses need distinctive stock.)";
             return;
         }
-        int[] row = SaveFile.RowOf(hold);
+        int[] row = target.Row;
+        bool drift = target.ConsumableDrift;
+        string what = target.Label.Replace("★ ", "");
         _holdLocating = true;
         _holdLocateBtn.Enabled = false;
         _holdApplyBtn.Enabled = _holdFillBtn.Enabled = false;
         _holdStatus.ForeColor = Cc2Theme.Cyan;
-        _holdStatus.Text = "Locating your carrier hold in the game's memory… (this takes a few seconds)";
+        _holdStatus.Text = $"Locating {what} in the game's memory… (a few seconds)";
 
         System.Threading.Tasks.Task.Run(() =>
         {
             int copies = 0; int[]? live = null; string err = "";
-            try { copies = _trainer.LocateHold(row); live = _trainer.ReadHold(); }
+            try { copies = _trainer.LocateInventory(row, drift); live = _trainer.ReadHold(); }
             catch (Exception ex) { err = ex.Message; }
             BeginInvoke((Action)(() =>
             {
@@ -305,13 +349,13 @@ public sealed partial class MainForm
                 {
                     _holdApplyBtn.Enabled = _holdFillBtn.Enabled = false;
                     _holdStatus.ForeColor = Cc2Theme.Red;
-                    _holdStatus.Text = "Couldn't find your hold. Load the SAME save you're playing in-game, then LOCATE again.";
+                    _holdStatus.Text = $"Couldn't find {what}. Make sure the SAME save is loaded in-game, then LOCATE again.";
                     return;
                 }
                 PopulateHoldGrid(live);
                 _holdApplyBtn.Enabled = _holdFillBtn.Enabled = true;
                 _holdStatus.ForeColor = Cc2Theme.Green;
-                _holdStatus.Text = $"Locked on ({copies} copy{(copies == 1 ? "" : "ies")} found). Edit NEW QTY (or Fill + SET ALL), then APPLY TO GAME.";
+                _holdStatus.Text = $"Locked on {what} ({copies} cop{(copies == 1 ? "y" : "ies")}). Edit NEW QTY (or Fill + SET ALL), then APPLY.";
             }));
         });
     }
@@ -364,11 +408,13 @@ public sealed partial class MainForm
 
     private void RefreshTrainer()
     {
+        if (_targetsSave != _save) { RebuildLiveTargets(); _targetsSave = _save; }
+
         bool a = _trainer.Attached;
         _attachBtn.Enabled = !a;
         _detachBtn.Enabled = a;
         _findCreditBtn.Enabled = a;
-        _holdLocateBtn.Enabled = a && !_holdLocating;
+        _holdLocateBtn.Enabled = a && !_holdLocating && _targetCombo.Items.Count > 0;
         if (!a)
         {
             _setCreditBtn.Enabled = _freezeBtn.Enabled = false;
@@ -376,7 +422,7 @@ public sealed partial class MainForm
             _holdGrid.Rows.Clear();
             _holdLiveValues = null;
             _holdStatus.ForeColor = Cc2Theme.MidGrey;
-            _holdStatus.Text = "Attach, load the save you're playing, then LOCATE your carrier hold.";
+            _holdStatus.Text = "Attach, load your in-game save, pick a target, then LOCATE.";
         }
         _trainerStatus.ForeColor = a ? Cc2Theme.Green : Cc2Theme.MidGrey;
         _trainerStatus.Text = a ? _trainer.StatusText + "\n" + _trainer.ModuleInfo : _trainer.StatusText;

@@ -141,33 +141,65 @@ public sealed class Cc2Trainer : IDisposable
     /// <summary>Positional slot count of the located hold.</summary>
     public int HoldSlotCount => _holdRow.Length;
 
+    /// <summary>Locate every copy of the player's carrier hold (drift-tolerant fingerprint).</summary>
+    public int LocateHold(int[] saveRow) => LocateInventory(saveRow, consumableDrift: true);
+
     /// <summary>
-    /// Locate every copy of the player's carrier hold in the running game by fingerprinting the
-    /// positional quantity row taken from the loaded save. Returns the number of copies found.
+    /// Locate every copy of a positional inventory row in the running game by fingerprinting the row
+    /// taken from the loaded save. <paramref name="consumableDrift"/> = true for the carrier hold (whose
+    /// ammo/fuel drift as you play, so it anchors on stable non-consumable slots and tolerates a looser
+    /// match); false for island warehouses (dense, stable stock — anchor on the most distinctive values
+    /// and require nearly all of them to match). Returns the number of copies found.
     /// </summary>
-    public int LocateHold(int[] saveRow)
+    public int LocateInventory(int[] saveRow, bool consumableDrift)
     {
         _holdCopies.Clear();
         _holdRow = Array.Empty<int>();
         if (_mem == null || _scanner == null || saveRow.Length == 0) return 0;
         int n = saveRow.Length;
+        int nonZero = saveRow.Count(v => v != 0);
 
-        // Anchor on distinctive values (fast, precise) plus the largest stable non-consumable slots
-        // (so live copies are still found after ammo/fuel have drifted from the saved values).
-        var anchors = new List<int>();
-        anchors.AddRange(Enumerable.Range(0, n).Where(i => saveRow[i] >= 50));
-        anchors.AddRange(Enumerable.Range(0, n)
-            .Where(i => saveRow[i] >= 4 && IsNonConsumable(i))
-            .OrderByDescending(i => saveRow[i]).Take(6));
-        var anchorSlots = anchors.Distinct().ToArray();
-        if (anchorSlots.Length == 0)
-            anchorSlots = Enumerable.Range(0, n).Where(i => saveRow[i] > 0)
-                .OrderByDescending(i => saveRow[i]).Take(8).ToArray();
+        int[] anchorSlots;
+        int minMatch;
+        if (consumableDrift)
+        {
+            // Carrier hold: distinctive values (fast) + largest stable non-consumable slots (so live
+            // copies are still found after ammo/fuel drift from the saved values).
+            var anchors = new List<int>();
+            anchors.AddRange(Enumerable.Range(0, n).Where(i => saveRow[i] >= 50));
+            anchors.AddRange(Enumerable.Range(0, n)
+                .Where(i => saveRow[i] >= 4 && IsNonConsumable(i))
+                .OrderByDescending(i => saveRow[i]).Take(6));
+            anchorSlots = anchors.Distinct().ToArray();
+            if (anchorSlots.Length == 0)
+                anchorSlots = Enumerable.Range(0, n).Where(i => saveRow[i] > 0)
+                    .OrderByDescending(i => saveRow[i]).Take(8).ToArray();
+            minMatch = Math.Max(24, (int)(n * 0.55));
+        }
+        else
+        {
+            // Warehouse: anchor on the most distinctive stock values and require essentially every
+            // non-zero slot to match, so a mostly-zero row can't false-match a zeroed memory region.
+            anchorSlots = Enumerable.Range(0, n).Where(i => saveRow[i] != 0)
+                .OrderByDescending(i => saveRow[i]).Take(12).ToArray();
+            minMatch = (n - nonZero) + Math.Max(1, (int)(nonZero * 0.85));
+        }
 
-        int minMatch = Math.Max(24, (int)(n * 0.55));
         _holdCopies.AddRange(_scanner.FindRowCopies(saveRow, anchorSlots, minMatch));
         _holdRow = (int[])saveRow.Clone();
         return _holdCopies.Count;
+    }
+
+    /// <summary>
+    /// True when a positional row is distinctive enough to locate in memory without risking false
+    /// matches against zeroed regions. Sparse warehouses (few small values) are not safely findable.
+    /// </summary>
+    public static bool IsRowFindable(int[] row)
+    {
+        int big = row.Count(v => v >= 100);
+        int med = row.Count(v => v >= 30);
+        int nonZero = row.Count(v => v != 0);
+        return (big >= 1 && nonZero >= 4) || med >= 5;
     }
 
     private static bool IsNonConsumable(int itemId)

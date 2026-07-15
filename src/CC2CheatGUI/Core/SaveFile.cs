@@ -21,6 +21,18 @@ public sealed class SaveFile
     public static int[] RowOf(InventoryContainer hold) =>
         hold.Entries.OrderBy(e => e.ItemId).Select(e => (int)e.Quantity).ToArray();
 
+    /// <summary>
+    /// Build a fixed-size positional quantity row (index = item id) from any container — including the
+    /// sparse island/warehouse stock, whose entries are scattered item ids that must be placed by index.
+    /// </summary>
+    public static int[] PositionalRow(InventoryContainer c, int size)
+    {
+        var row = new int[size];
+        foreach (var (id, q) in c.Entries)
+            if (id >= 0 && id < size) row[id] = (int)Math.Clamp(q, 0, int.MaxValue);
+        return row;
+    }
+
     /// <summary>Every team in the save, with directly-editable currency &amp; blueprints.</summary>
     public IReadOnlyList<TeamInfo> Teams { get; private set; } = Array.Empty<TeamInfo>();
 
