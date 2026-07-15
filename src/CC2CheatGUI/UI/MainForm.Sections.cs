@@ -35,11 +35,12 @@ public sealed partial class MainForm
             case "blueprints": _refreshBlueprints?.Invoke(); break;
             case "islands": _refreshIslands?.Invoke(); break;
             case "fleet": _refreshFleet?.Invoke(); break;
+            case "live": _refreshTrainer?.Invoke(); break;
         }
     }
 
     private Action? _refreshOverview, _refreshCurrency, _refreshInventory,
-                    _refreshBlueprints, _refreshIslands, _refreshFleet;
+                    _refreshBlueprints, _refreshIslands, _refreshFleet, _refreshTrainer;
 
     private static Panel Host() => new() { Dock = DockStyle.Fill, BackColor = Cc2Theme.Screen };
 

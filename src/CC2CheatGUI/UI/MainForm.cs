@@ -1,5 +1,6 @@
 using System.Drawing.Text;
 using CC2CheatGUI.Core;
+using CC2CheatGUI.Core.Ram;
 
 namespace CC2CheatGUI.UI;
 
@@ -7,6 +8,7 @@ public sealed partial class MainForm : Form
 {
     private SaveFile? _save;
     private bool _dirty;
+    private readonly Cc2Trainer _trainer = new();
 
     // shell
     private readonly ComboBox _slotCombo = new();
@@ -36,7 +38,11 @@ public sealed partial class MainForm : Form
         BuildStatusBar();
 
         Load += (_, _) => { RefreshSlots(); ShowSection("overview"); };
-        FormClosing += (_, e) => { if (!ConfirmDiscardIfDirty()) e.Cancel = true; };
+        FormClosing += (_, e) =>
+        {
+            if (!ConfirmDiscardIfDirty()) { e.Cancel = true; return; }
+            try { _trainer.Dispose(); } catch { }
+        };
     }
 
     // -----------------------------------------------------------------
@@ -122,6 +128,7 @@ public sealed partial class MainForm : Form
         AddNav("blueprints", "BLUEPRINTS", "❒");
         AddNav("islands", "ISLANDS", "◈");
         AddNav("fleet", "FLEET", "▟");
+        AddNav("live", "LIVE ▸ TRAINER", "◉");
 
         Controls.Add(_nav);
     }
@@ -147,6 +154,7 @@ public sealed partial class MainForm : Form
         _sections["blueprints"] = BuildBlueprintsSection();
         _sections["islands"] = BuildIslandsSection();
         _sections["fleet"] = BuildFleetSection();
+        _sections["live"] = BuildTrainerSection();
 
         foreach (var panel in _sections.Values)
         {

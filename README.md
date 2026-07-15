@@ -34,6 +34,11 @@ ammo** — with one-click cheat presets.
   all for the player.
 - **Fleet** — list your units with live hitpoints / fuel / weapon counts; edit hitpoints per unit or
   bulk repair / refuel / rearm.
+- **Live ▸ Trainer** — edit the *running* game's memory so cheats apply instantly with no reload:
+  set/freeze credit (value scan) and toggle Unlimited Ammo / God Mode. CC2 ships with no anti-cheat,
+  and the tool finds every address by **signature scanning at attach time** (never hardcoded
+  offsets), applying NOP patches it restores on toggle-off/detach. Single-player only; ammo/health
+  cheats sit on code shared with the AI, so they affect enemy units too.
 - **Safe, faithful writes** — a timestamped `.bak` is created before every save, and the writer
   reproduces the game's exact XML format **byte-for-byte** (verified against real saves), so only
   the values you changed differ from the original.
