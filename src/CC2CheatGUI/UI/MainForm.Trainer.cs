@@ -69,7 +69,7 @@ public sealed partial class MainForm
         var creditPanel = new ConsolePanel { Title = "SET / FREEZE CREDIT", Dock = DockStyle.Fill, TitleFill = Cc2Theme.Green };
         creditPanel.Controls.Add(BuildCreditControls());
 
-        var cheatsPanel = new ConsolePanel { Title = "TOGGLE CHEATS", Dock = DockStyle.Top, Height = 130, TitleFill = Cc2Theme.Cyan };
+        var cheatsPanel = new ConsolePanel { Title = "TOGGLE CHEATS", Dock = DockStyle.Top, Height = 172, TitleFill = Cc2Theme.Cyan };
         _cheatList = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Cc2Theme.Black, Padding = new Padding(10), AutoScroll = true };
         cheatsPanel.Controls.Add(_cheatList);
 
@@ -106,20 +106,20 @@ public sealed partial class MainForm
         _findCreditBtn.Click += (_, _) => TrainerFindCredit();
 
         _creditFindStatus = Style.Label("", Cc2Theme.Cyan, Cc2Theme.PixelSmall);
-        _creditFindStatus.Location = new Point(4, 92); _creditFindStatus.MaximumSize = new Size(390, 0);
+        _creditFindStatus.Location = new Point(4, 90); _creditFindStatus.MaximumSize = new Size(390, 0);
 
-        var hint = Style.Label("If FIND returns many matches, earn or spend a little in-game, update the\nnumber above, and click FIND again to narrow it down.", Cc2Theme.DimGrey, Cc2Theme.PixelSmall);
-        hint.Location = new Point(4, 118);
+        var hint = Style.Label("Many matches? Earn/spend a little in-game, update the number, FIND again.", Cc2Theme.DimGrey, Cc2Theme.PixelSmall);
+        hint.Location = new Point(4, 120); hint.MaximumSize = new Size(390, 0);
 
         var step2 = new SectionHeader("STEP 2 — SET A NEW VALUE") { Accent = Cc2Theme.Green };
-        step2.Location = new Point(0, 160); step2.Dock = DockStyle.None; step2.Width = 400;
+        step2.Location = new Point(0, 140); step2.Dock = DockStyle.None; step2.Width = 400;
         var lbl2 = Style.Label("New credit amount:", Cc2Theme.MidGrey, Cc2Theme.PixelSmall);
-        lbl2.Location = new Point(4, 188);
-        _newCredit = new NumericUpDown { Maximum = 2_000_000_000, Minimum = 0, Value = 1_000_000_000, Width = 160, Location = new Point(4, 210) };
+        lbl2.Location = new Point(4, 164);
+        _newCredit = new NumericUpDown { Maximum = 2_000_000_000, Minimum = 0, Value = 1_000_000_000, Width = 160, Location = new Point(4, 184) };
         Style.ApplyDark(_newCredit);
-        _setCreditBtn = new FlatButton("SET") { Accent = Cc2Theme.Green, Width = 90, Height = 26, Location = new Point(172, 210), Enabled = false };
+        _setCreditBtn = new FlatButton("SET") { Accent = Cc2Theme.Green, Width = 90, Height = 26, Location = new Point(172, 184), Enabled = false };
         _setCreditBtn.Click += (_, _) => TrainerSetCredit();
-        _freezeBtn = new FlatButton("FREEZE: OFF") { Accent = Cc2Theme.MidGrey, Width = 130, Height = 26, Location = new Point(268, 210), Enabled = false };
+        _freezeBtn = new FlatButton("FREEZE: OFF") { Accent = Cc2Theme.MidGrey, Width = 130, Height = 26, Location = new Point(268, 184), Enabled = false };
         _freezeBtn.Click += (_, _) => TrainerToggleFreeze();
 
         p.Controls.Add(step1);
@@ -433,6 +433,69 @@ public sealed partial class MainForm
         _cheatList.Controls.Clear();
         foreach (var cheat in _trainer.Cheats)
             _cheatList.Controls.Add(BuildCheatRow(cheat, a));
+        _cheatList.Controls.Add(BuildProtectRow(a));
+    }
+
+    private Control BuildProtectRow(bool attached)
+    {
+        var row = new Panel { Width = 380, Height = 58, Margin = new Padding(0, 0, 0, 8), BackColor = Cc2Theme.Screen };
+        bool on = _trainer.Protecting;
+        var toggle = new FlatButton(on ? "● ON" : "○ OFF")
+        {
+            Accent = on ? Cc2Theme.Green : Cc2Theme.MidGrey,
+            Width = 84, Height = 40, Location = new Point(6, 8), Enabled = attached,
+        };
+        toggle.Click += (_, _) => TrainerToggleProtect();
+
+        var name = Style.Label("Protect Carrier (freeze hull)", attached ? Cc2Theme.White : Cc2Theme.DimGrey, Cc2Theme.PixelBody);
+        name.Location = new Point(100, 8);
+        var sub = Style.Label("player-only  •  locate via your loaded save, right after loading", Cc2Theme.MidGrey, Cc2Theme.PixelSmall);
+        sub.Location = new Point(100, 30);
+
+        row.Controls.Add(toggle);
+        row.Controls.Add(name);
+        row.Controls.Add(sub);
+        return row;
+    }
+
+    private void TrainerToggleProtect()
+    {
+        if (_trainer.Protecting)
+        {
+            _trainer.StopProtect();
+            SetStatus("Carrier protection OFF.");
+            RefreshTrainer();
+            return;
+        }
+
+        var vs = (_save?.PlayerCarrierHold as VehicleHoldContainer)?.State;
+        if (vs is not { HasHitpoints: true, HasFuel: true })
+        {
+            Cc2MessageBox.Show(this, "PROTECT CARRIER",
+                "Load the save you're playing (top-left) first — I locate your carrier by its HP + fuel.",
+                Cc2Theme.Yellow);
+            return;
+        }
+
+        int hp = (int)(vs.Hitpoints ?? 0);
+        int fuelBits = BitConverter.SingleToInt32Bits((float)(vs.Fuel ?? 0));
+        int n;
+        try { n = _trainer.LocateCarrierProtect(fuelBits, hp); }
+        catch (Exception ex) { Cc2MessageBox.Show(this, "PROTECT CARRIER", ex.Message, Cc2Theme.Red); return; }
+
+        if (n == 0)
+        {
+            Cc2MessageBox.Show(this, "PROTECT CARRIER",
+                "Couldn't pin down your carrier in memory.\n\n" +
+                "It's found by your carrier's exact fuel level, so do this right after loading the save " +
+                "(before you've burned much fuel). Reload the save in-game and try again.",
+                Cc2Theme.Red);
+            return;
+        }
+
+        _trainer.StartProtect(100_000);
+        SetStatus($"Carrier protection ON — hull frozen at 100,000 ({n} field(s)). Player-only.");
+        RefreshTrainer();
     }
 
     private Control BuildCheatRow(TrainerCheat cheat, bool attached)

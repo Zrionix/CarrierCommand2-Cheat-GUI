@@ -263,6 +263,72 @@ public sealed class Cc2Trainer : IDisposable
 
     public void ResetHold() { _holdCopies.Clear(); _holdRow = Array.Empty<int>(); }
 
+    // ---- player-only carrier protection (HP freeze) ----
+
+    private readonly List<IntPtr> _carrierHp = new();
+    private System.Threading.Timer? _protectTimer;
+    private int _protectValue = 100000;
+
+    /// <summary>Number of resolved carrier HP fields (0 = not located).</summary>
+    public int CarrierHpCount => _carrierHp.Count;
+    public bool Protecting => _protectTimer != null;
+
+    /// <summary>
+    /// Locate the player carrier's HP field(s) by anchoring on its distinctive exact fuel value (the
+    /// carrier carries ~50k fuel vs ~1k for units, so it's near-unique in memory), then taking the HP
+    /// value where it sits inside the same struct. Player-specific: only the carrier's own struct.
+    /// </summary>
+    public int LocateCarrierProtect(int fuelBits, int hp, int windowBytes = 1024)
+    {
+        _carrierHp.Clear();
+        if (_mem == null || _scanner == null || hp <= 0) return 0;
+
+        var fuelHits = _scanner.ScanInt32(fuelBits);
+        if (fuelHits.Count == 0 || fuelHits.Count > 64) return 0;   // 0 = fuel drifted; many = not distinctive
+
+        var seen = new HashSet<long>();
+        var buf = new byte[windowBytes];
+        foreach (var f in fuelHits)
+        {
+            long start = f.ToInt64() - windowBytes / 2;
+            int got = _mem.TryReadBytes(new IntPtr(start), buf, buf.Length);
+            if (got <= 0) continue;
+            for (int i = 0; i + 4 <= got; i += 4)
+                if (BitConverter.ToInt32(buf, i) == hp && seen.Add(start + i))
+                    _carrierHp.Add(new IntPtr(start + i));
+        }
+        return _carrierHp.Count;
+    }
+
+    /// <summary>Start freezing the located carrier HP field(s) at <paramref name="value"/> (player-only).</summary>
+    public void StartProtect(int value)
+    {
+        _protectValue = value;
+        foreach (var a in _carrierHp) { try { _mem!.Write(a, value); } catch { } }
+        _protectTimer ??= new System.Threading.Timer(_ =>
+        {
+            if (_mem == null) return;
+            foreach (var a in _carrierHp) { try { _mem.Write(a, _protectValue); } catch { } }
+        }, null, 0, 150);
+    }
+
+    public void StopProtect()
+    {
+        _protectTimer?.Dispose();
+        _protectTimer = null;
+    }
+
+    public void ResetProtect() { StopProtect(); _carrierHp.Clear(); }
+
+    /// <summary>Current values at the located carrier HP field(s) (for status/verification).</summary>
+    public int[] ReadCarrierHpValues()
+    {
+        var vals = new List<int>();
+        if (_mem != null)
+            foreach (var a in _carrierHp) { try { vals.Add(_mem.Read<int>(a)); } catch { } }
+        return vals.ToArray();
+    }
+
     public void FreezeCredit(int value)
     {
         FrozenCredit = value;
@@ -293,6 +359,7 @@ public sealed class Cc2Trainer : IDisposable
         }
         CreditCandidates.Clear();
         ResetHold();
+        ResetProtect();
         _mem?.Dispose();
         _mem = null;
         _scanner = null;
