@@ -163,8 +163,7 @@ public sealed class Cc2Trainer : IDisposable
         int minMatch;
         if (consumableDrift)
         {
-            // Carrier hold: distinctive values (fast) + largest stable non-consumable slots (so live
-            // copies are still found after ammo/fuel drift from the saved values).
+            // Carrier hold: distinctive values (fast) + largest stable non-consumable slots.
             var anchors = new List<int>();
             anchors.AddRange(Enumerable.Range(0, n).Where(i => saveRow[i] >= 50));
             anchors.AddRange(Enumerable.Range(0, n)
@@ -174,7 +173,11 @@ public sealed class Cc2Trainer : IDisposable
             if (anchorSlots.Length == 0)
                 anchorSlots = Enumerable.Range(0, n).Where(i => saveRow[i] > 0)
                     .OrderByDescending(i => saveRow[i]).Take(8).ToArray();
-            minMatch = Math.Max(24, (int)(n * 0.55));
+            // WRITE SAFETY: require nearly all non-zero slots to match. A loose match can hit unrelated
+            // memory (a hold row is ~1/4 zeros), and writing big item values there corrupts the game.
+            // The UI re-reads the fresh save before locating, so real copies match almost exactly and
+            // this stays selective without missing them.
+            minMatch = (n - nonZero) + Math.Max(1, (int)(nonZero * 0.80));
         }
         else
         {
@@ -234,22 +237,46 @@ public sealed class Cc2Trainer : IDisposable
         return n;
     }
 
-    /// <summary>Write a full/partial quantity row to every located copy. Returns copies written.</summary>
+    /// <summary>
+    /// Write a full/partial quantity row to every located copy that STILL holds our inventory row.
+    /// Each copy is re-verified against the located fingerprint immediately before writing, so a region
+    /// that was freed/reallocated since LOCATE can never receive a stray (potentially crashing) write.
+    /// </summary>
     public int WriteHold(int[] values)
     {
-        if (_mem == null || _holdCopies.Count == 0) return 0;
-        int n = 0;
+        if (_mem == null || _holdCopies.Count == 0 || _holdRow.Length == 0) return 0;
+        int len = _holdRow.Length;
+        int nonZero = _holdRow.Count(v => v != 0);
+        int needNonZero = Math.Max(1, (int)(nonZero * 0.70));
+        var buf = new byte[len * 4];
+
+        int written = 0;
         foreach (var b in _holdCopies)
         {
+            // Re-verify this copy still matches the located row before touching it.
+            if (_mem.TryReadBytes(b, buf, buf.Length) != buf.Length) continue;
+            int mnz = 0;
+            for (int i = 0; i < len; i++)
+                if (_holdRow[i] != 0 && BitConverter.ToInt32(buf, i * 4) == _holdRow[i]) mnz++;
+            if (mnz < needNonZero) continue;   // not our inventory anymore — skip for safety
+
             bool ok = true;
-            for (int i = 0; i < values.Length && i < _holdRow.Length; i++)
+            for (int i = 0; i < values.Length && i < len; i++)
             {
                 try { _mem.Write(new IntPtr(b.ToInt64() + i * 4L), values[i]); }
                 catch { ok = false; break; }
             }
-            if (ok) n++;
+            if (ok) written++;
         }
-        return n;
+
+        // Track what we just wrote so a follow-up APPLY re-verifies against the new state, not the old.
+        if (written > 0)
+        {
+            var updated = (int[])_holdRow.Clone();
+            for (int i = 0; i < values.Length && i < len; i++) updated[i] = values[i];
+            _holdRow = updated;
+        }
+        return written;
     }
 
     /// <summary>Set every slot of the located hold to <paramref name="value"/> across all copies.</summary>
