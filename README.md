@@ -1,93 +1,77 @@
-# Carrier Command 2 — Save Editor / Cheat GUI
+# Carrier Command 2 Save Editor + Trainer
 
-A Windows desktop tool for editing **Carrier Command 2** single-player saves, restyled to match the
-game's own naval-command-console look. Edit your **credits**, **item quantities** (carrier hold and
-island warehouses), **unlocked blueprints**, **island ownership**, and your **fleet's health / fuel /
-ammo** — with one-click cheat presets.
+A Windows tool for cheating your way through single-player Carrier Command 2. You can edit your save file while the game is closed, or hook into the running game and change things on the fly without reloading.
 
-> ⚠️ **Single-player only.** Editing saves for online/co-op sessions where another player hosts can
-> desync or be rejected. The tool always makes an automatic `.bak` backup, but **close the game
-> before saving** so it doesn't overwrite your changes on autosave.
+It's styled to look like it belongs next to CC2 instead of a plain spreadsheet, and it covers the things you actually want to mess with: money, stockpiles, blueprints, island ownership, and your fleet's health and fuel.
 
-## What it does
+## Before you start
 
-- **Auto-detects your saves** under `%APPDATA%\Carrier Command 2\saved_games\slot_*`, or open any
-  `save.xml` manually.
-- **Overview + Quick Cheats** — one-click presets: max credits, unlock all blueprints, own all
-  islands, fill carrier hold, repair/refuel/rearm the fleet, or "Armageddon" (all of them).
-- **Credits** — reads and edits the player team's money directly (and every other team's). Handles
-  the full `uint32` range (values above two billion are common).
-- **Inventory** — every inventory container in the save (carrier hold, each deployed unit, and each
-  island warehouse) with per-item editing, bulk-set, and add-by-ID.
-- **Blueprints** — unlock every vehicle/attachment blueprint for the player, or clear them.
-- **Islands** — list every island with its owner; reassign ownership individually or capture them
-  all for the player.
-- **Fleet** — list your units with live hitpoints / fuel / weapon counts; edit hitpoints per unit or
-  bulk repair / refuel / rearm.
-- **Live ▸ Trainer** — edit the *running* game's memory so cheats apply instantly with no reload:
-  set/freeze credit (value scan) and toggle Unlimited Ammo / God Mode. CC2 ships with no anti-cheat,
-  and the tool finds every address by **signature scanning at attach time** (never hardcoded
-  offsets), applying NOP patches it restores on toggle-off/detach. Single-player only; ammo/health
-  cheats sit on code shared with the AI, so they affect enemy units too.
-- **Safe, faithful writes** — a timestamped `.bak` is created before every save, and the writer
-  reproduces the game's exact XML format **byte-for-byte** (verified against real saves), so only
-  the values you changed differ from the original.
+This is for single-player only. Using it on a co-op game that someone else is hosting will either get your changes rejected or desync the session, so don't do that.
 
-## The save format (and why v1 couldn't open real saves)
+The tool backs up your save automatically before it writes anything, but always close the game before you edit a save file. If the game is still running it can autosave right over your changes.
 
-Carrier Command 2 saves are **not** a single well-formed XML document — a `save.xml` is an XML
-*fragment*: an `<?xml?>` declaration followed by several sibling top-level elements
-(`<meta/>`, `<scene>`, `<vehicles>`, `<missiles>`). The standard `XmlDocument.Load` throws
-*"There are multiple root elements"* on every real save, so the original v1 could not open any of
-them. v2 wraps the fragment in a synthetic root to parse it and serializes with a custom writer that
-matches the game's own formatting exactly:
+## Getting it
 
-- single-quoted attributes for values that contain `"` (the escaped `state` blobs),
-- no space before `/>`,
-- literal tabs/newlines preserved inside attribute values,
-- only `& < >` escaped.
+Download `CC2CheatGUI.exe` from the [Releases page](https://github.com/Zrionix/CarrierCommand2-Cheat-GUI/releases) and run it. It's a single file with nothing to install, and it doesn't need .NET or any other dependency.
 
-Two inventory encodings exist and both are handled automatically:
+The first time you open it, Windows SmartScreen might show a "Windows protected your PC" box. That happens with basically any small program that isn't code-signed. Click "More info", then "Run anyway".
 
-- **Island / warehouse stock:** sparse `<q i="ITEM_ID" q="QUANTITY"/>` entries.
-- **Vehicle holds:** a **positional** `<item_quantities>` list (child index = item ID) stored as an
-  **escaped, nested XML document inside the `state` attribute** of the vehicle's state node. Live
-  hitpoints, fuel and per-weapon ammo live in the same escaped blob, so the tool parses each
-  vehicle's state exactly once and shares it between the inventory and fleet views.
+## Editing your save (game closed)
 
-Item IDs are positional and can shift between game versions; unknown IDs are shown as `Item <id>`
-rather than guessed.
+This is the safe, reliable way to cheat. Close CC2, make your changes, hit Save, then load the game back up.
 
-## Download
+The app finds your saves on its own (they live in `%APPDATA%\Carrier Command 2\saved_games`). Pick a slot from the dropdown at the top. If for some reason it doesn't find them, use Open to browse to a `save.xml` yourself.
 
-Grab the latest **`CC2CheatGUI.exe`** from the
-[**Releases**](https://github.com/Zrionix/CarrierCommand2-Cheat-GUI/releases) page and run it. It's a
-self-contained single file — no .NET install needed. The first launch may show a one-time Windows
-SmartScreen warning ("More info → Run anyway"), expected for an unsigned hobby tool.
+The tabs down the left side:
 
-## Build
+- **Overview** — a summary of your save, plus one-click cheats: max out credits, unlock every blueprint, take every island, fill your carrier hold, or repair/refuel/rearm your whole fleet. The Armageddon button does all of them at once.
+- **Currency** — set your credits. It reads and writes the real value straight from the save, and handles the huge numbers CC2 likes to use.
+- **Inventory** — every stockpile in the save: your carrier hold, each deployed vehicle, and every island warehouse. Edit item counts one at a time or set a whole list at once.
+- **Blueprints** — unlock every vehicle and attachment, or clear them.
+- **Islands** — see who owns what and hand islands over to yourself (or any other faction).
+- **Fleet** — your units with their hull, fuel and ammo. Patch them up one at a time or all together.
 
-Requires the [.NET 8 SDK](https://dotnet.microsoft.com/download).
+Every time you save, it drops a timestamped `.bak` copy of your save next to the original, so you can always undo by restoring that file.
+
+## Editing the running game (the LIVE tab)
+
+The LIVE tab changes the game's memory while you play, so cheats take effect instantly with no reload. This is the more experimental half of the tool, but it works well once you get the hang of it.
+
+Get into an actual mission first, then click Attach.
+
+- **Credit** — your current money gets filled in from your save automatically. Click Find to lock onto it in memory, then set it to whatever you want, or freeze it so it never drops.
+- **Unlimited Ammo** — weapons stop using up ammo. One catch: the game runs your weapons and the enemy's on the same code, so the AI gets unlimited ammo too.
+- **Live Inventory** — edit your carrier hold, or a well-stocked island warehouse, in real time. Save your game first (that's how the tool knows what your hold looks like), pick the target, click Locate, change the numbers, and Apply.
+- **Protect Carrier** — freezes your carrier's hull so it can't be destroyed. This one only affects your carrier, not the enemy. It finds your ship by its fuel level, so turn it on soon after loading a save, before you've burned much fuel.
+
+None of the memory locations are hardcoded. The tool searches for everything fresh each time you attach, so a game update won't quietly send it to the wrong place, and it double-checks that it owns the memory before writing to it.
+
+## A note on item names
+
+Item slots in CC2 are numbered, and those numbers can move around between game versions. If the tool shows something as "Item 34" instead of a proper name, it just means it isn't certain what that slot is on your version. Nothing is broken and the number is still safe to edit.
+
+## Building from source
+
+You'll need the [.NET 8 SDK](https://dotnet.microsoft.com/download).
 
 ```powershell
 dotnet build -c Release
 dotnet run --project src/CC2CheatGUI
 ```
 
-### Produce a standalone .exe (no runtime needed)
+To produce the standalone single-file exe:
 
 ```powershell
 dotnet publish src/CC2CheatGUI -c Release -r win-x64 --self-contained true `
   -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
 ```
 
-The single-file `.exe` lands in `src/CC2CheatGUI/bin/Release/net8.0-windows/win-x64/publish/`.
+It lands in `src/CC2CheatGUI/bin/Release/net8.0-windows/win-x64/publish/`.
 
 ## Credits
 
-- UI font: **LanaPixel** (SIL Open Font License) — the same pixel font Carrier Command 2 uses,
-  bundled for an authentic look.
+The pixel font is LanaPixel (SIL Open Font License), the same one Carrier Command 2 uses, bundled so the tool matches the game's look.
 
 ## Disclaimer
 
-For personal, single-player use. Back up your saves. Use at your own risk.
+Personal, single-player use only. Back up your saves. Use at your own risk.
