@@ -1,0 +1,11 @@
+LanaPixel
+=========
+
+`lanapixel.ttf` is the LanaPixel bitmap-style TrueType font, released under the
+SIL Open Font License (OFL). It is the same UI font Carrier Command 2 uses, bundled
+here so the editor renders with the game's authentic typography.
+
+Upstream / license: https://github.com/what-the-diff/LanaPixel  (SIL OFL 1.1)
+
+Before redistributing a build, include the upstream OFL.txt alongside this file, as
+the OFL requires the license to accompany the font.

@@ -6,15 +6,27 @@ namespace CC2CheatGUI.Core;
 /// <summary>A single located/edited Carrier Command 2 save.xml.</summary>
 public sealed class SaveFile
 {
-    private readonly XmlDocument _doc;
+    private readonly Cc2Document _doc;
 
     public string Path { get; }
     public IReadOnlyList<InventoryContainer> Containers { get; private set; } = Array.Empty<InventoryContainer>();
 
+    /// <summary>Every team in the save, with directly-editable currency &amp; blueprints.</summary>
+    public IReadOnlyList<TeamInfo> Teams { get; private set; } = Array.Empty<TeamInfo>();
+
+    /// <summary>Every parsed live vehicle state (carrier + deployed units of all teams).</summary>
+    public IReadOnlyList<VehicleState> VehicleStates { get; private set; } = Array.Empty<VehicleState>();
+
+    /// <summary>Every island tile, with editable ownership.</summary>
+    public IReadOnlyList<IslandTile> Islands { get; private set; } = Array.Empty<IslandTile>();
+
     /// <summary>The non-AI team id, when one could be identified ("" otherwise).</summary>
     public string PlayerTeamId { get; private set; } = "";
 
-    private SaveFile(string path, XmlDocument doc)
+    /// <summary>The player's team, if identified.</summary>
+    public TeamInfo? PlayerTeam => Teams.FirstOrDefault(t => t.IsPlayer);
+
+    private SaveFile(string path, Cc2Document doc)
     {
         Path = path;
         _doc = doc;
@@ -22,8 +34,7 @@ public sealed class SaveFile
 
     public static SaveFile Load(string path)
     {
-        var doc = new XmlDocument { PreserveWhitespace = true };
-        doc.Load(path);
+        var doc = Cc2Document.Load(path);
         var save = new SaveFile(path, doc);
         save.Discover();
         return save;
@@ -35,82 +46,127 @@ public sealed class SaveFile
 
     private void Discover()
     {
-        IdentifyPlayerTeam();
+        DiscoverTeams();
+        DiscoverVehicleStates();
+        DiscoverIslands();
 
         var containers = new List<InventoryContainer>();
-        containers.AddRange(DiscoverVehicleHolds());
+        containers.AddRange(BuildHoldContainers());
         containers.AddRange(DiscoverIslandStock());
         Containers = containers;
     }
 
-    private void IdentifyPlayerTeam()
+    private void DiscoverIslands()
     {
-        var teams = _doc.SelectNodes("//*[@is_ai_controlled]");
-        if (teams == null) return;
-
-        string firstHuman = "";
-        foreach (XmlNode node in teams)
-        {
-            if (node is not XmlElement el) continue;
-            var ai = el.GetAttribute("is_ai_controlled").Trim().ToLowerInvariant();
-            bool isAi = ai is "true" or "1";
-            if (!isAi)
-            {
-                var id = el.GetAttribute("id");
-                if (id.Length == 0) id = el.GetAttribute("team_id");
-                if (firstHuman.Length == 0) firstHuman = id;
-            }
-        }
-        PlayerTeamId = firstHuman;
+        var list = new List<IslandTile>();
+        // Island tiles carry biome_type + team_control and (unlike team nodes) no is_ai_controlled.
+        var nodes = _doc.SelectNodes("//tiles/tiles/t[@team_control][@biome_type]");
+        if (nodes != null)
+            foreach (XmlNode n in nodes)
+                if (n is XmlElement el) list.Add(new IslandTile(el));
+        Islands = list;
     }
 
-    private List<InventoryContainer> DiscoverVehicleHolds()
+    /// <summary>
+    /// CC2 stores each faction as a <c>&lt;t&gt;</c> node carrying <c>is_ai_controlled</c> and a
+    /// direct <c>currency</c> attribute. The player is the (first) non-AI team.
+    /// </summary>
+    private void DiscoverTeams()
     {
-        var result = new List<InventoryContainer>();
-
-        // Map vehicle id -> (team_id, definition_index) for labelling.
-        var vehicleInfo = new Dictionary<string, (string Team, string Def)>();
-        var vehicleNodes = _doc.SelectNodes("//*[@definition_index]");
-        if (vehicleNodes != null)
+        var teams = new List<TeamInfo>();
+        var nodes = _doc.SelectNodes("//*[@is_ai_controlled][@currency]");
+        if (nodes != null)
         {
+            foreach (XmlNode node in nodes)
+            {
+                if (node is not XmlElement el) continue;
+                var attr = el.GetAttributeNode("currency");
+                if (attr == null) continue;
+
+                var ai = el.GetAttribute("is_ai_controlled").Trim().ToLowerInvariant();
+                bool isAi = ai is "true" or "1";
+
+                var id = el.GetAttribute("id");
+                if (id.Length == 0) id = el.GetAttribute("team_id");
+
+                teams.Add(new TeamInfo(el, attr)
+                {
+                    Id = id,
+                    IsAi = isAi,
+                    IsNeutral = el.GetAttribute("is_neutral").Trim().ToLowerInvariant() is "true" or "1",
+                    IsDestroyed = el.GetAttribute("is_destroyed").Trim().ToLowerInvariant() is "true" or "1",
+                });
+            }
+        }
+        Teams = teams;
+
+        var player = teams.FirstOrDefault(t => !t.IsAi && !t.IsNeutral)
+                     ?? teams.FirstOrDefault(t => !t.IsAi);
+        if (player != null) player.IsPlayer = true;
+        PlayerTeamId = player?.Id ?? "";
+    }
+
+    /// <summary>Type + definition_index for a vehicle id, taken from the top-level vehicle roster.</summary>
+    private Dictionary<string, (string Team, string Def)> _vehicleRoster = new();
+
+    private void DiscoverVehicleStates()
+    {
+        // Roster: vehicle id -> (team_id, definition_index), from the plain <vehicles> list.
+        _vehicleRoster = new Dictionary<string, (string, string)>();
+        var vehicleNodes = _doc.SelectNodes("//*[@definition_index][@team_id]");
+        if (vehicleNodes != null)
             foreach (XmlNode node in vehicleNodes)
             {
                 if (node is not XmlElement el) continue;
                 var id = el.GetAttribute("id");
-                if (id.Length == 0) continue;
-                if (!vehicleInfo.ContainsKey(id))
-                    vehicleInfo[id] = (el.GetAttribute("team_id"), el.GetAttribute("definition_index"));
+                if (id.Length == 0 || _vehicleRoster.ContainsKey(id)) continue;
+                _vehicleRoster[id] = (el.GetAttribute("team_id"), el.GetAttribute("definition_index"));
             }
-        }
 
-        var stateNodes = _doc.SelectNodes("//*[@state]");
-        if (stateNodes == null) return result;
+        var states = new List<VehicleState>();
+        var stateNodes = _doc.SelectNodes("//vehicle_states/v[@state]")
+                         ?? _doc.SelectNodes("//*[@state]");
+        if (stateNodes != null)
+            foreach (XmlNode node in stateNodes)
+            {
+                if (node is not XmlElement el) continue;
+                var vs = VehicleState.TryCreate(el);
+                if (vs != null) states.Add(vs);
+            }
+        VehicleStates = states;
+    }
 
-        int anon = 0;
-        foreach (XmlNode node in stateNodes)
+    /// <summary>True when a vehicle state belongs to the player's team.</summary>
+    public bool IsPlayerUnit(VehicleState vs)
+    {
+        var team = vs.TeamId;
+        if (team.Length == 0 && _vehicleRoster.TryGetValue(vs.Id, out var info)) team = info.Team;
+        return PlayerTeamId.Length > 0 && team == PlayerTeamId;
+    }
+
+    /// <summary>Human label for a vehicle state (type + team + id), player-flagged.</summary>
+    public string DescribeUnit(VehicleState vs)
+    {
+        var team = vs.TeamId;
+        var def = vs.DefinitionIndex;
+        if ((team.Length == 0 || def.Length == 0) && _vehicleRoster.TryGetValue(vs.Id, out var info))
         {
-            if (node is not XmlElement stateNode) continue;
-            var id = stateNode.GetAttribute("id");
-
-            string label;
-            bool yours = false;
-            if (id.Length > 0 && vehicleInfo.TryGetValue(id, out var info))
-            {
-                yours = PlayerTeamId.Length > 0 && info.Team == PlayerTeamId;
-                string type = DescribeVehicle(info.Def);
-                label = $"{type} — team {info.Team} (vehicle {id})";
-            }
-            else
-            {
-                label = id.Length > 0 ? $"Vehicle hold (id {id})" : $"Vehicle hold #{++anon}";
-            }
-            if (yours) label = "★ " + label + "  [YOURS]";
-
-            var hold = VehicleHoldContainer.TryCreate(stateNode, label);
-            if (hold == null) continue;
-            result.Add(hold);
+            if (team.Length == 0) team = info.Team;
+            if (def.Length == 0) def = info.Def;
         }
+        string type = ItemCatalog.DescribeVehicle(def);
+        string label = $"{type} — team {team} (vehicle {vs.Id})";
+        return IsPlayerUnit(vs) ? "★ " + label + "  [YOURS]" : label;
+    }
 
+    private List<InventoryContainer> BuildHoldContainers()
+    {
+        var result = new List<InventoryContainer>();
+        foreach (var vs in VehicleStates)
+        {
+            var hold = VehicleHoldContainer.TryCreate(vs, DescribeUnit(vs));
+            if (hold != null) result.Add(hold);
+        }
         // Player's holds first, then the rest, each group kept in document order.
         result.Sort((a, b) =>
         {
@@ -119,6 +175,54 @@ public sealed class SaveFile
             return ay.CompareTo(by);
         });
         return result;
+    }
+
+    // ---------------------------------------------------------------------
+    // Bulk "cheat" operations
+    // ---------------------------------------------------------------------
+
+    /// <summary>Player vehicle states that carry live hitpoints/fuel/ammo.</summary>
+    public IEnumerable<VehicleState> PlayerUnits => VehicleStates.Where(IsPlayerUnit);
+
+    /// <summary>Repair + refuel + rearm every player unit. Returns the number of units affected.</summary>
+    public int BuffPlayerFleet(long hitpoints = 100000, double fuel = 99999, long ammo = 9999,
+        bool repair = true, bool refuel = true, bool rearm = true)
+    {
+        int n = 0;
+        foreach (var vs in PlayerUnits)
+        {
+            bool touched = false;
+            if (repair && vs.HasHitpoints) { vs.Hitpoints = hitpoints; touched = true; }
+            if (refuel && vs.HasFuel) { vs.Fuel = fuel; touched = true; }
+            if (rearm)
+                foreach (var a in vs.Attachments)
+                    if (a.HasAmmo) { a.Ammo = ammo; touched = true; }
+            if (touched) n++;
+        }
+        return n;
+    }
+
+    /// <summary>Fill every positional slot of the player's carrier hold (and other player holds).</summary>
+    public int FillPlayerHolds(long quantity = 999)
+    {
+        int n = 0;
+        foreach (var vs in PlayerUnits)
+            if (vs.HasInventory)
+            {
+                for (int i = 0; i < vs.SlotCount; i++) vs.SetItem(i, quantity);
+                n++;
+            }
+        return n;
+    }
+
+    /// <summary>Give every island to the player. Returns count changed.</summary>
+    public int OwnAllIslands()
+    {
+        if (PlayerTeamId.Length == 0 || !int.TryParse(PlayerTeamId, out var team)) return 0;
+        int n = 0;
+        foreach (var isl in Islands)
+            if (isl.TeamControl != team) { isl.TeamControl = team; n++; }
+        return n;
     }
 
     private List<InventoryContainer> DiscoverIslandStock()
@@ -182,39 +286,18 @@ public sealed class SaveFile
         return string.Join(" — ", parts);
     }
 
-    private static string DescribeVehicle(string definitionIndex)
-    {
-        return definitionIndex switch
-        {
-            "0" => "Carrier",
-            "1" => "Seal",
-            "2" => "Walrus",
-            "3" => "Bear",
-            "4" => "Albatross",
-            "5" => "Manta",
-            "6" => "Razorbill",
-            "7" => "Petrel",
-            "8" => "Barge",
-            "" => "Vehicle",
-            _ => $"Vehicle (def {definitionIndex})",
-        };
-    }
-
     // ---------------------------------------------------------------------
-    // Currency
+    // Currency (value-search fallback, kept from v1)
     // ---------------------------------------------------------------------
 
     /// <summary>
-    /// Find every place in the save that holds the exact integer <paramref name="value"/> (the
-    /// amount the player should read from their in-game money display). Matches near the player's
-    /// team data are flagged as the likely budget field.
+    /// Find every place in the save that holds the exact integer <paramref name="value"/>. Used as a
+    /// fallback when the direct team currency field isn't what the user wants to edit.
     /// </summary>
     public List<CurrencyMatch> FindValue(long value)
     {
         var matches = new List<CurrencyMatch>();
-        WalkForValue(_doc.DocumentElement, value, matches);
-
-        // Likely-budget matches (near player team / money-ish names) first.
+        WalkForValue(_doc.Root, value, matches);
         matches.Sort((a, b) => b.Score.CompareTo(a.Score));
         return matches;
     }
@@ -303,8 +386,11 @@ public sealed class SaveFile
     /// <returns>The path of the backup that was written.</returns>
     public string Save()
     {
-        foreach (var container in Containers)
-            container.Flush();
+        // Vehicle/attachment edits (inventory, hitpoints, fuel, ammo) all live in escaped state blobs;
+        // flush each parsed state exactly once. Island/currency/blueprint edits are already applied
+        // directly to the outer document.
+        foreach (var vs in VehicleStates)
+            vs.Flush();
 
         string backup = BackupOriginal();
         _doc.Save(Path);
@@ -323,6 +409,105 @@ public sealed class SaveFile
         if (File.Exists(Path))
             File.Copy(Path, snapshot, overwrite: true);
         return snapshot;
+    }
+}
+
+/// <summary>A team/faction node in the save, exposing its directly-editable currency.</summary>
+public sealed class TeamInfo
+{
+    private readonly XmlElement _element;
+    private readonly XmlAttribute _currencyAttr;
+
+    internal TeamInfo(XmlElement element, XmlAttribute currencyAttr)
+    {
+        _element = element;
+        _currencyAttr = currencyAttr;
+    }
+
+    public string Id { get; init; } = "";
+    public bool IsAi { get; init; }
+    public bool IsNeutral { get; init; }
+    public bool IsDestroyed { get; init; }
+    public bool IsPlayer { get; set; }
+
+    public long Currency
+    {
+        get => long.TryParse(_currencyAttr.Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var v) ? v : 0;
+        set => _currencyAttr.Value = value.ToString(CultureInfo.InvariantCulture);
+    }
+
+    // ----- blueprints (tech unlocks) -----
+    // Stored as <unlocked_blueprints><bytes size="N"><b value="0..255"/>...</bytes></unlocked_blueprints>,
+    // a little-endian bit array: byte i, bit j => blueprint (i*8 + j) is unlocked.
+
+    /// <summary>Count of currently-unlocked blueprints (popcount of the bit array).</summary>
+    public int UnlockedBlueprintCount
+    {
+        get
+        {
+            int count = 0;
+            var bytes = _element["unlocked_blueprints"]?["bytes"];
+            if (bytes != null)
+                foreach (XmlNode c in bytes.ChildNodes)
+                    if (c is XmlElement b && b.Name == "b" && int.TryParse(b.GetAttribute("value"), out var v))
+                        count += System.Numerics.BitOperations.PopCount((uint)(byte)v);
+            return count;
+        }
+    }
+
+    /// <summary>Unlock every blueprint by filling the bit array with 0xFF bytes.</summary>
+    public void UnlockAllBlueprints(int byteCount = 8)
+    {
+        var bytes = EnsureBytesElement();
+        bytes.SetAttribute("size", byteCount.ToString(CultureInfo.InvariantCulture));
+        bytes.IsEmpty = false;
+        while (bytes.HasChildNodes) bytes.RemoveChild(bytes.FirstChild!);
+        var doc = _element.OwnerDocument!;
+        for (int i = 0; i < byteCount; i++)
+        {
+            var b = doc.CreateElement("b");
+            b.SetAttribute("value", "255");
+            bytes.AppendChild(b);
+        }
+    }
+
+    /// <summary>Clear all unlocked blueprints (reset the bit array to empty).</summary>
+    public void ClearBlueprints()
+    {
+        var bytes = EnsureBytesElement();
+        bytes.SetAttribute("size", "0");
+        while (bytes.HasChildNodes) bytes.RemoveChild(bytes.FirstChild!);
+        bytes.IsEmpty = true;
+    }
+
+    private XmlElement EnsureBytesElement()
+    {
+        var doc = _element.OwnerDocument!;
+        var unlocked = _element["unlocked_blueprints"];
+        if (unlocked == null)
+        {
+            unlocked = doc.CreateElement("unlocked_blueprints");
+            _element.AppendChild(unlocked);
+        }
+        var bytes = unlocked["bytes"];
+        if (bytes == null)
+        {
+            bytes = doc.CreateElement("bytes");
+            unlocked.AppendChild(bytes);
+        }
+        return bytes;
+    }
+
+    public string Kind =>
+        IsPlayer ? "Player" :
+        IsNeutral ? "Neutral" :
+        IsAi ? "Enemy (AI)" : "Human";
+
+    public override string ToString()
+    {
+        var tag = IsPlayer ? "★ " : "";
+        var dead = IsDestroyed ? " [destroyed]" : "";
+        return $"{tag}Team {Id} — {Kind}{dead}";
     }
 }
 

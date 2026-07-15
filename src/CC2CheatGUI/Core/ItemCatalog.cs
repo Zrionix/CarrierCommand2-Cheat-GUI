@@ -91,6 +91,24 @@ public static class ItemCatalog
     /// <summary>True when the ID has a confirmed display name.</summary>
     public static bool IsKnown(int id) => Names.ContainsKey(id);
 
+    /// <summary>Human-readable vehicle type for a chassis <c>definition_index</c>.</summary>
+    public static string DescribeVehicle(string definitionIndex) => definitionIndex switch
+    {
+        "0" => "Carrier",
+        "1" => "Seal",
+        "2" => "Walrus",
+        "3" => "Bear",
+        "4" => "Albatross",
+        "5" => "Manta",
+        "6" => "Razorbill",
+        "7" => "Petrel",
+        "8" => "Barge",
+        "58" => "Mule",
+        "59" => "Droid",
+        "" => "Vehicle",
+        _ => $"Vehicle (def {definitionIndex})",
+    };
+
     private static Dictionary<int, string> BuildCategories()
     {
         var map = new Dictionary<int, string>();
