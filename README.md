@@ -9,16 +9,6 @@ ammo** — with one-click cheat presets.
 > desync or be rejected. The tool always makes an automatic `.bak` backup, but **close the game
 > before saving** so it doesn't overwrite your changes on autosave.
 
-## Screenshots
-
-| Overview + Quick Cheats | Credits | Inventory |
-|---|---|---|
-| ![Overview](docs/screenshots/section-overview.png) | ![Credits](docs/screenshots/section-currency.png) | ![Inventory](docs/screenshots/section-inventory.png) |
-
-| Blueprints | Islands | Fleet |
-|---|---|---|
-| ![Blueprints](docs/screenshots/section-blueprints.png) | ![Islands](docs/screenshots/section-islands.png) | ![Fleet](docs/screenshots/section-fleet.png) |
-
 ## What it does
 
 - **Auto-detects your saves** under `%APPDATA%\Carrier Command 2\saved_games\slot_*`, or open any
@@ -92,12 +82,6 @@ dotnet publish src/CC2CheatGUI -c Release -r win-x64 --self-contained true `
 ```
 
 The single-file `.exe` lands in `src/CC2CheatGUI/bin/Release/net8.0-windows/win-x64/publish/`.
-
-## Roadmap
-
-- **v2 — Live RAM editing.** Carrier Command 2 ships with no anti-cheat, so a live "trainer" mode
-  (unlimited credit / fuel / ammo via signature scanning) is feasible. Full design spec:
-  [docs/V2-RAM-Editing.md](docs/V2-RAM-Editing.md).
 
 ## Credits
 
