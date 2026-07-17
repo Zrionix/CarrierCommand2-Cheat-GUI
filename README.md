@@ -28,12 +28,12 @@ The app finds your saves on its own (they live in `%APPDATA%\Carrier Command 2\s
 
 The tabs down the left side:
 
-- **Overview** — a summary of your save, plus one-click cheats: max out credits, unlock every blueprint, take every island, fill your carrier hold, or repair/refuel/rearm your whole fleet. The Armageddon button does all of them at once.
-- **Currency** — set your credits. It reads and writes the real value straight from the save, and handles the huge numbers CC2 likes to use.
-- **Inventory** — every stockpile in the save: your carrier hold, each deployed vehicle, and every island warehouse. Edit item counts one at a time or set a whole list at once.
-- **Blueprints** — unlock every vehicle and attachment, or clear them.
-- **Islands** — see who owns what and hand islands over to yourself (or any other faction).
-- **Fleet** — your units with their hull, fuel and ammo. Patch them up one at a time or all together.
+- **Overview**: a summary of your save, plus one-click cheats: max out credits, unlock every blueprint, take every island, fill your carrier hold, or repair/refuel/rearm your whole fleet. The Armageddon button does all of them at once.
+- **Currency**: set your credits. It reads and writes the real value straight from the save, and handles the huge numbers CC2 likes to use.
+- **Inventory**: every stockpile in the save: your carrier hold, each deployed vehicle, and every island warehouse. Edit item counts one at a time or set a whole list at once.
+- **Blueprints**: unlock every vehicle and attachment, or clear them.
+- **Islands**: see who owns what and hand islands over to yourself (or any other faction).
+- **Fleet**: your units with their hull, fuel and ammo. Patch them up one at a time or all together.
 
 ![Inventory editor](screenshots/section-inventory.png)
 
@@ -45,11 +45,11 @@ The LIVE tab changes the game's memory while you play, so cheats take effect ins
 
 Get into an actual mission first, then click Attach.
 
-- **Credit** — your current money gets filled in from your save automatically. Click Find to lock onto it in memory, then set it to whatever you want, or freeze it so it never drops.
-- **Unlimited Ammo** — weapons stop using up ammo. One catch: the game runs your weapons and the enemy's on the same code, so the AI gets unlimited ammo too.
-- **Live Inventory** — edit your carrier hold, or a well-stocked island warehouse, in real time. Save your game first (that's how the tool knows what your hold looks like), pick the target, click Locate, change the numbers, and Apply.
-- **Protect Carrier** — freezes your carrier's hull so it can't be destroyed. This one only affects your carrier, not the enemy. It finds your ship by its fuel level, so turn it on soon after loading a save, before you've burned much fuel.
-- **Unlimited Fuel** — holds your carrier's fuel at its current level so it never drains. Also player-only, and it shares the same lock-on as Protect Carrier. Top up at an island first if you want a full tank.
+- **Credit**: your current money gets filled in from your save automatically. Click Find to lock onto it in memory, then set it to whatever you want, or freeze it so it never drops.
+- **Unlimited Ammo**: weapons stop using up ammo. One catch: the game runs your weapons and the enemy's on the same code, so the AI gets unlimited ammo too.
+- **Live Inventory**: edit your carrier hold, or a well-stocked island warehouse, in real time. Save your game first (that's how the tool knows what your hold looks like), pick the target, click Locate, change the numbers, and Apply.
+- **Protect Carrier**: freezes your carrier's hull so it can't be destroyed. This one only affects your carrier, not the enemy. It finds your ship by its fuel level, so turn it on soon after loading a save, before you've burned much fuel.
+- **Unlimited Fuel**: holds your carrier's fuel at its current level so it never drains. Also player-only, and it shares the same lock-on as Protect Carrier. Top up at an island first if you want a full tank.
 
 ![Live trainer](screenshots/section-live.png)
 
