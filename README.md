@@ -4,6 +4,10 @@ A Windows tool for cheating your way through single-player Carrier Command 2. Yo
 
 It's styled to look like it belongs next to CC2 instead of a plain spreadsheet, and it covers the things you actually want to mess with: money, stockpiles, blueprints, island ownership, and your fleet's health and fuel.
 
+![Overview and quick cheats](screenshots/section-overview.png)
+
+There's a [wiki](https://github.com/Zrionix/CarrierCommand2-Cheat-GUI/wiki) with a full walkthrough of every tab if you want more detail than this page.
+
 ## Before you start
 
 This is for single-player only. Using it on a co-op game that someone else is hosting will either get your changes rejected or desync the session, so don't do that.
@@ -31,6 +35,8 @@ The tabs down the left side:
 - **Islands** — see who owns what and hand islands over to yourself (or any other faction).
 - **Fleet** — your units with their hull, fuel and ammo. Patch them up one at a time or all together.
 
+![Inventory editor](screenshots/section-inventory.png)
+
 Every time you save, it drops a timestamped `.bak` copy of your save next to the original, so you can always undo by restoring that file.
 
 ## Editing the running game (the LIVE tab)
@@ -43,6 +49,9 @@ Get into an actual mission first, then click Attach.
 - **Unlimited Ammo** — weapons stop using up ammo. One catch: the game runs your weapons and the enemy's on the same code, so the AI gets unlimited ammo too.
 - **Live Inventory** — edit your carrier hold, or a well-stocked island warehouse, in real time. Save your game first (that's how the tool knows what your hold looks like), pick the target, click Locate, change the numbers, and Apply.
 - **Protect Carrier** — freezes your carrier's hull so it can't be destroyed. This one only affects your carrier, not the enemy. It finds your ship by its fuel level, so turn it on soon after loading a save, before you've burned much fuel.
+- **Unlimited Fuel** — holds your carrier's fuel at its current level so it never drains. Also player-only, and it shares the same lock-on as Protect Carrier. Top up at an island first if you want a full tank.
+
+![Live trainer](screenshots/section-live.png)
 
 None of the memory locations are hardcoded. The tool searches for everything fresh each time you attach, so a game update won't quietly send it to the wrong place, and it double-checks that it owns the memory before writing to it.
 

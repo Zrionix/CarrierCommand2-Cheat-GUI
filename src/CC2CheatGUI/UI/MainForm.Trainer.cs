@@ -69,7 +69,7 @@ public sealed partial class MainForm
         var creditPanel = new ConsolePanel { Title = "SET / FREEZE CREDIT", Dock = DockStyle.Fill, TitleFill = Cc2Theme.Green };
         creditPanel.Controls.Add(BuildCreditControls());
 
-        var cheatsPanel = new ConsolePanel { Title = "TOGGLE CHEATS", Dock = DockStyle.Top, Height = 240, TitleFill = Cc2Theme.Cyan };
+        var cheatsPanel = new ConsolePanel { Title = "TOGGLE CHEATS", Dock = DockStyle.Top, Height = 222, TitleFill = Cc2Theme.Cyan };
         _cheatList = new FlowLayoutPanel { Dock = DockStyle.Fill, FlowDirection = FlowDirection.TopDown, WrapContents = false, BackColor = Cc2Theme.Black, Padding = new Padding(10), AutoScroll = true };
         cheatsPanel.Controls.Add(_cheatList);
 
@@ -451,27 +451,27 @@ public sealed partial class MainForm
         foreach (var cheat in _trainer.Cheats)
             _cheatList.Controls.Add(BuildCheatRow(cheat, a));
         _cheatList.Controls.Add(BuildToggleRow("Protect Carrier (freeze hull)",
-            "player-only  •  locates your carrier via the loaded save, right after loading",
+            "player-only  •  lock on right after loading/saving",
             a, _trainer.Protecting, TrainerToggleProtect));
         _cheatList.Controls.Add(BuildToggleRow("Unlimited Fuel (carrier)",
-            "player-only  •  holds fuel at its current level (refuel first for a full tank)",
+            "player-only  •  holds fuel at its current level",
             a, _trainer.FuelFreezing, TrainerToggleFuel));
     }
 
     private Control BuildToggleRow(string title, string subtitle, bool attached, bool on, Action onClick)
     {
-        var row = new Panel { Width = 380, Height = 58, Margin = new Padding(0, 0, 0, 8), BackColor = Cc2Theme.Screen };
+        var row = new Panel { Width = 380, Height = 50, Margin = new Padding(0, 0, 0, 8), BackColor = Cc2Theme.Screen };
         var toggle = new FlatButton(on ? "● ON" : "○ OFF")
         {
             Accent = on ? Cc2Theme.Green : Cc2Theme.MidGrey,
-            Width = 84, Height = 40, Location = new Point(6, 8), Enabled = attached,
+            Width = 84, Height = 36, Location = new Point(6, 6), Enabled = attached,
         };
         toggle.Click += (_, _) => onClick();
 
         var name = Style.Label(title, attached ? Cc2Theme.White : Cc2Theme.DimGrey, Cc2Theme.PixelBody);
-        name.Location = new Point(100, 8);
+        name.Location = new Point(100, 5);
         var sub = Style.Label(subtitle, Cc2Theme.MidGrey, Cc2Theme.PixelSmall);
-        sub.Location = new Point(100, 30);
+        sub.Location = new Point(100, 26);
 
         row.Controls.Add(toggle);
         row.Controls.Add(name);
@@ -533,13 +533,13 @@ public sealed partial class MainForm
 
     private Control BuildCheatRow(TrainerCheat cheat, bool attached)
     {
-        var row = new Panel { Width = 620, Height = 58, Margin = new Padding(0, 0, 0, 8), BackColor = Cc2Theme.Screen };
+        var row = new Panel { Width = 620, Height = 50, Margin = new Padding(0, 0, 0, 8), BackColor = Cc2Theme.Screen };
         bool ok = attached && cheat.Resolved;
 
         var toggle = new FlatButton(cheat.Enabled ? "● ON" : "○ OFF")
         {
             Accent = cheat.Enabled ? Cc2Theme.Green : Cc2Theme.MidGrey,
-            Width = 84, Height = 40, Location = new Point(6, 8), Enabled = ok,
+            Width = 84, Height = 36, Location = new Point(6, 6), Enabled = ok,
         };
         toggle.Click += (_, _) =>
         {
@@ -553,12 +553,12 @@ public sealed partial class MainForm
         };
 
         var name = Style.Label(cheat.Label, ok ? Cc2Theme.White : Cc2Theme.DimGrey, Cc2Theme.PixelBody);
-        name.Location = new Point(100, 8);
+        name.Location = new Point(100, 5);
         string sub = !attached ? "attach to resolve" : cheat.Resolved ? $"{cheat.FoundCount} site(s) found" : "signature not found on this build";
         if (cheat.AffectsEnemies) sub += "  •  affects enemies too";
         if (cheat.Experimental) sub += "  •  experimental";
         var subLbl = Style.Label(sub, cheat.Resolved || !attached ? Cc2Theme.MidGrey : Cc2Theme.Red, Cc2Theme.PixelSmall);
-        subLbl.Location = new Point(100, 30);
+        subLbl.Location = new Point(100, 26);
 
         row.Controls.Add(toggle);
         row.Controls.Add(name);

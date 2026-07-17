@@ -52,13 +52,27 @@ public sealed partial class MainForm
     {
         var host = Host();
 
-        var tiles = new FlowLayoutPanel { Dock = DockStyle.Top, Height = 78, BackColor = Cc2Theme.Screen, Padding = new Padding(0, 0, 0, 10) };
+        // Equal-width columns so all five tiles always fit and scale with the window. A FlowLayoutPanel
+        // wrapped the last tile onto a clipped second row at narrower widths.
+        var tiles = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top, Height = 78, BackColor = Cc2Theme.Screen,
+            ColumnCount = 5, RowCount = 1, Padding = new Padding(0, 0, 0, 10),
+        };
+        for (int i = 0; i < 5; i++) tiles.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 20f));
+        tiles.RowStyles.Add(new RowStyle(SizeType.Percent, 100f));
+
         var tCurrency = NewTile("CREDITS", Cc2Theme.Green);
         var tBlueprints = NewTile("BLUEPRINTS", Cc2Theme.Cyan);
         var tIslands = NewTile("ISLANDS OWNED", Cc2Theme.Orange);
         var tFleet = NewTile("YOUR UNITS", Cc2Theme.Cyan);
         var tTeam = NewTile("PLAYER TEAM", Cc2Theme.White);
-        foreach (var t in new[] { tCurrency, tBlueprints, tIslands, tFleet, tTeam }) tiles.Controls.Add(t);
+        foreach (var t in new[] { tCurrency, tBlueprints, tIslands, tFleet, tTeam })
+        {
+            t.Dock = DockStyle.Fill;
+            t.Margin = new Padding(0, 0, 10, 0);
+            tiles.Controls.Add(t);
+        }
 
         var panel = new ConsolePanel { Title = "QUICK CHEATS", Dock = DockStyle.Fill, TitleFill = Cc2Theme.Cyan };
         var inner = new FlowLayoutPanel { Dock = DockStyle.Fill, BackColor = Cc2Theme.Black, Padding = new Padding(14), AutoScroll = true };
